@@ -18,10 +18,17 @@ def _jikan() -> type[Ingester]:
     return JikanAnimeIngester
 
 
+def _mal_csv() -> type[Ingester]:
+    from recsys.ingest.anime_mal_csv import MalCsvAnimeIngester
+
+    return MalCsvAnimeIngester
+
+
 # name -> lazy loader. Lazy so an ingester's optional deps are imported only
 # when that ingester actually runs.
 REGISTRY: dict[str, Callable[[], type[Ingester]]] = {
     "anime_jikan": _jikan,
+    "anime_mal_csv": _mal_csv,
     # Phase 1: "books_openlibrary": _openlibrary,
     # Phase 1: "movies_tmdb":       _tmdb,
     # Phase 2: "music_musicbrainz": _musicbrainz,

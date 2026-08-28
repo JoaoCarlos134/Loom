@@ -3,8 +3,9 @@
 Cross-domain hybrid recommender system (anime / books / music / movies / TV) that runs
 as a local desktop app. No server, no cloud, no admin rights.
 
-**Status: Phase 0** — project skeleton plus one domain (anime, via Jikan) ingested
-end to end. No recommendation models yet, by design.
+**Status: Phase 0** — project skeleton plus one domain (anime) ingested end to end
+from two sources: a live API (Jikan) and a static CSV dump (MyAnimeList via
+Kaggle). ~14.5k items. No recommendation models yet, by design.
 
 ---
 
@@ -55,16 +56,32 @@ uv run python scripts/bootstrap.py
 ```
 
 Initialises the SQLite schema, runs the configured ingesters, prints a summary table.
-Idempotent — safe to re-run. The first run fetches ~2000 anime from Jikan under a
-3 req/sec limiter (roughly 40 s); later runs are served from the on-disk cache and
-touch the network not at all.
+Idempotent — safe to re-run.
+
+Two sources feed the `anime` domain:
+
+| Ingester | Source | Items | Cost |
+|---|---|---|---|
+| `anime_mal_csv` | Kaggle MAL dump, static | ~14,478 | ~2 GB download once, then ~2 s |
+| `anime_jikan` | Jikan v4, live API | up to 2000 | 3 req/sec limiter |
+
+`anime_mal_csv` downloads `azathoth42/myanimelist` through kagglehub on first
+run (cached in `~/.cache/kagglehub`, so later runs are offline) and reads only
+the anime table — the multi-GB user-ratings files in that dataset are ignored
+for now. Point `MAL_CSV_PATH` at a local file to skip the download entirely.
+
+> **Jikan is currently degraded** and serves only its warm cache: page 1 of
+> `/top/anime` works, everything deeper 504s, so it contributes ~25 items and
+> burns ~20 s exhausting retries each run. Drop it from `INGESTERS` if that is
+> not worth it; the run is still recorded honestly as `status=error` and does
+> not count as a successful ingest.
 
 Useful flags:
 
 ```powershell
-uv run python scripts/bootstrap.py --limit 100        # small run while developing
-uv run python scripts/bootstrap.py --no-ingest        # schema only
-uv run python scripts/bootstrap.py --only anime_jikan
+uv run python scripts/bootstrap.py --limit 100          # small run while developing
+uv run python scripts/bootstrap.py --no-ingest          # schema only
+uv run python scripts/bootstrap.py --only anime_mal_csv # skip the live API
 ```
 
 ### 5. Run the app
@@ -148,7 +165,13 @@ src/recsys/ingest/
   ratelimit.py            sliding-window limiter (3/s AND 60/min) + jittered backoff
   cache.py                on-disk response cache keyed by URL
   anime_jikan.py          Jikan v4 → UnifiedItem
+  anime_mal_csv.py        Kaggle MAL CSV dump → UnifiedItem
 ```
+
+Adding `anime_mal_csv` cost exactly what the abstraction promised: one new file
+in `ingest/`, one line in `registry.py`, and settings in `config.py`. No edit to
+`db.py`, `routes.py`, `bootstrap.py` or the UI — `bootstrap.py` picks it up
+through the registry and sets `target_count` generically.
 
 ### Why these choices
 
@@ -164,9 +187,25 @@ deduplication is Phase 2's job and needs both rows to survive to do it.
 
 **`mean_rating` is normalised to 0–10 at ingest; `popularity` is not normalised.**
 Ratings are comparable across sources once rescaled, so scaling belongs in the
-ingester. Popularity is a raw within-source size signal (MAL member count here) whose
-scale is meaningless across sources — pretending otherwise would silently corrupt any
-cross-domain ranking. It is only ever used for ordering within a source.
+ingester. Popularity is a raw within-source size signal (MAL member count in both
+current sources) whose scale is meaningless across sources — pretending otherwise
+would silently corrupt any cross-domain ranking.
+
+⚠️ **The second source made this bite.** `query_items` orders by `popularity DESC`
+globally, which was harmless with one source and is not any more. Jikan's counts
+are live 2026 figures for the top 25 titles (avg ~1.1M); the CSV dump is a 2018
+snapshot of the whole catalog (avg ~23k). The same work, *Fullmetal Alchemist:
+Brotherhood*, is 3,709,700 in Jikan and 1,199,091 in the dump — a 3× gap that is
+pure vintage, not popularity. So all 25 Jikan rows sort above all 14,478 CSV rows
+in the default listing. Fixing it properly means per-source normalisation
+(percentile rank within source) at query time, which is Phase 2 work; it is
+recorded here rather than papered over.
+
+**Two sources means duplicate works, on purpose.** 13 of the 25 Jikan rows
+describe an anime the CSV dump also carries, under a different `item_uid`
+(`anime:jikan:5114` vs `anime:mal:5114`). Both populate `external_ids.mal_id`,
+which is the join key Phase 2's entity resolution will reconcile them on. Search
+shows both today.
 
 **`raw_json` is stored per item.** A mapping bug is then fixable offline: correct
 `map_item`, re-run the mapper over the DB, never re-hit the API.

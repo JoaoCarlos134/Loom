@@ -13,6 +13,7 @@ dependencies = [
     "pydantic-settings>=2.4",
     "pyarrow>=17.0",
     "truststore>=0.10.4",
+    "kagglehub>=1.0.2",
 ]
 
 [dependency-groups]

@@ -53,6 +53,13 @@ class Settings(BaseSettings):
     jikan_rate_per_min: float = 60.0
     jikan_max_retries: int = 5
 
+    # MyAnimeList CSV dump (Kaggle). Path empty -> fetched via kagglehub and
+    # cached under ~/.cache/kagglehub. target 0 -> ingest the whole file.
+    mal_csv_dataset: str = "azathoth42/myanimelist"
+    mal_csv_filename: str = "AnimeList.csv"
+    mal_csv_path: str = ""
+    mal_csv_target_count: int = 0
+
     http_cache_ttl_days: int = 30
 
     # --- server ---
