@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Loom</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <h1>Loom</h1>
+    </div>
+
+    <div class="controls">
+      <div class="search-wrap">
+        <svg class="search-icon" viewBox="0 0 20 20" aria-hidden="true">
+          <circle cx="9" cy="9" r="6" fill="none" stroke="currentColor" stroke-width="2"/>
+          <line x1="13.5" y1="13.5" x2="18" y2="18" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round"/>
+        </svg>
+        <input id="search" type="search" placeholder="Search titles and descriptions"
+               autocomplete="off" spellcheck="false" aria-label="Search the catalog">
+      </div>
+
+      <select id="domain" aria-label="Filter by domain">
+        <option value="">All domains</option>
+        <option value="anime">Anime</option>
+        <option value="book">Books</option>
+        <option value="music">Music</option>
+        <option value="movie">Movies</option>
+        <option value="tv">TV</option>
+      </select>
+    </div>
+  </header>
+
+  <main>
+    <div class="statusbar">
+      <span id="result-count" class="count"></span>
+      <span id="stats" class="stats"></span>
+    </div>
+
+    <div id="grid" class="grid" aria-live="polite"></div>
+
+    <div id="empty" class="empty" hidden>
+      <p class="empty-title">Nothing here yet</p>
+      <p class="empty-body">Run <code>uv run python scripts/bootstrap.py</code> to populate the
+         catalog, or adjust your search.</p>
+    </div>
+
+    <div id="sentinel" class="sentinel" aria-hidden="true"></div>
+    <div id="loading" class="loading" hidden>Loading…</div>
+  </main>
+
+  <dialog id="detail" class="detail">
+    <button class="detail-close" data-close aria-label="Close">&times;</button>
+    <div id="detail-body"></div>
+  </dialog>
+
+  <script src="/app.js"></script>
+</body>
+</html>

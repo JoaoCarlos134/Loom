@@ -1,0 +1,32 @@
+# --- runtime data: never committed ---
+data/
+*.db
+*.db-wal
+*.db-shm
+*.parquet
+
+# --- secrets ---
+.env
+.env.local
+*.key
+
+# --- python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+
+# --- os / editor ---
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/

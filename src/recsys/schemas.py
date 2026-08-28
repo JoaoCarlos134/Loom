@@ -1,0 +1,227 @@
+"""Domain-agnostic data contracts.
+
+``UnifiedItem`` is the single row shape every domain (anime / book / music /
+movie / tv) collapses into. Adding a domain must never require changing this
+file beyond widening the ``Domain`` literal.
+"""
+
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+Domain = Literal["anime", "book", "music", "movie", "tv"]
+
+DOMAINS: tuple[str, ...] = ("anime", "book", "music", "movie", "tv")
+
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class Creator(BaseModel):
+    """A person or organisation attached to an item.
+
+    ``role`` is intentionally free-form: "studio" and "author" and "artist" are
+    not the same concept, and forcing them into one enum loses information.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    role: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _strip(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("creator name must not be empty")
+        return v
+
+
+class UnifiedItem(BaseModel):
+    """One catalog entry, normalised across sources.
+
+    ``item_uid`` is derived, never supplied: it is always
+    ``"{domain}:{source}:{source_id}"`` so it cannot drift from its parts.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    item_uid: str = ""
+    domain: Domain
+    source: str
+    source_id: str
+
+    title: str
+    alt_titles: list[str] = Field(default_factory=list)
+    year: int | None = None
+    creators: list[Creator] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    description: str | None = None
+    external_ids: dict[str, str] = Field(default_factory=dict)
+
+    # Source-relative "how big is this thing" signal (Jikan: member count).
+    # NOT comparable across sources; used only for within-source ordering.
+    popularity: float | None = None
+    # Normalised to a 0-10 scale by each ingester, so it IS cross-source comparable.
+    mean_rating: float | None = None
+    n_ratings: int | None = None
+
+    image_url: str | None = None
+    fetched_at: datetime = Field(default_factory=utcnow)
+
+    # Verbatim source payload, kept so a mapping bug can be fixed by re-running
+    # the mapper over the DB instead of re-hitting the upstream API.
+    raw_json: dict[str, Any] | None = None
+
+    # ---- validation -------------------------------------------------------
+
+    @field_validator("source", "source_id", "title", mode="before")
+    @classmethod
+    def _coerce_str(cls, v: Any) -> Any:
+        # Jikan hands out int ids; MusicBrainz hands out UUIDs. Normalise early.
+        return str(v) if v is not None and not isinstance(v, str) else v
+
+    @field_validator("source", "source_id", "title")
+    @classmethod
+    def _non_empty(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("must not be empty")
+        return v
+
+    @field_validator("year")
+    @classmethod
+    def _sane_year(cls, v: int | None) -> int | None:
+        if v is not None and not (1000 <= v <= 2100):
+            raise ValueError(f"implausible year: {v}")
+        return v
+
+    @field_validator("mean_rating")
+    @classmethod
+    def _rating_range(cls, v: float | None) -> float | None:
+        if v is not None and not (0.0 <= v <= 10.0):
+            raise ValueError(f"mean_rating must be normalised to 0-10, got {v}")
+        return v
+
+    @field_validator("n_ratings")
+    @classmethod
+    def _non_negative(cls, v: int | None) -> int | None:
+        if v is not None and v < 0:
+            raise ValueError("n_ratings must be >= 0")
+        return v
+
+    @field_validator("tags")
+    @classmethod
+    def _norm_tags(cls, v: list[str]) -> list[str]:
+        seen: dict[str, None] = {}
+        for t in v:
+            t = t.strip().lower()
+            if t:
+                seen.setdefault(t, None)
+        return list(seen)
+
+    @field_validator("alt_titles")
+    @classmethod
+    def _norm_alt(cls, v: list[str]) -> list[str]:
+        seen: dict[str, None] = {}
+        for t in v:
+            t = t.strip()
+            if t:
+                seen.setdefault(t, None)
+        return list(seen)
+
+    @field_validator("external_ids", mode="before")
+    @classmethod
+    def _stringify_ids(cls, v: Any) -> Any:
+        if isinstance(v, dict):
+            return {str(k): str(val) for k, val in v.items() if val is not None}
+        return v
+
+    @field_validator("fetched_at")
+    @classmethod
+    def _tz_aware(cls, v: datetime) -> datetime:
+        return v.replace(tzinfo=timezone.utc) if v.tzinfo is None else v.astimezone(timezone.utc)
+
+    @model_validator(mode="after")
+    def _derive_uid(self) -> "UnifiedItem":
+        expected = f"{self.domain}:{self.source}:{self.source_id}"
+        if self.item_uid and self.item_uid != expected:
+            raise ValueError(f"item_uid {self.item_uid!r} does not match {expected!r}")
+        object.__setattr__(self, "item_uid", expected)
+        return self
+
+    # ---- persistence helpers ---------------------------------------------
+
+    def to_row(self) -> dict[str, Any]:
+        """Flatten to the SQLite column shape (JSON fields become TEXT)."""
+        return {
+            "item_uid": self.item_uid,
+            "domain": self.domain,
+            "source": self.source,
+            "source_id": self.source_id,
+            "title": self.title,
+            "alt_titles": json.dumps(self.alt_titles, ensure_ascii=False),
+            "year": self.year,
+            "creators": json.dumps([c.model_dump() for c in self.creators], ensure_ascii=False),
+            "tags": json.dumps(self.tags, ensure_ascii=False),
+            "description": self.description,
+            "external_ids": json.dumps(self.external_ids, ensure_ascii=False),
+            "popularity": self.popularity,
+            "mean_rating": self.mean_rating,
+            "n_ratings": self.n_ratings,
+            "image_url": self.image_url,
+            "fetched_at": self.fetched_at.isoformat(),
+            "raw_json": json.dumps(self.raw_json, ensure_ascii=False) if self.raw_json else None,
+        }
+
+    @classmethod
+    def from_row(cls, row: Any) -> "UnifiedItem":
+        d = dict(row)
+        d["alt_titles"] = json.loads(d.get("alt_titles") or "[]")
+        d["creators"] = json.loads(d.get("creators") or "[]")
+        d["tags"] = json.loads(d.get("tags") or "[]")
+        d["external_ids"] = json.loads(d.get("external_ids") or "{}")
+        raw = d.get("raw_json")
+        d["raw_json"] = json.loads(raw) if raw else None
+        d.pop("rowid", None)
+        return cls.model_validate(d)
+
+
+# ---- API response models -------------------------------------------------
+
+
+class ItemsPage(BaseModel):
+    """Paginated /api/items response."""
+
+    total: int
+    limit: int
+    offset: int
+    items: list[UnifiedItem]
+
+
+class DomainStats(BaseModel):
+    domain: str
+    n_items: int
+    sources: list[str]
+    last_ingest_at: datetime | None = None
+
+
+class Stats(BaseModel):
+    total_items: int
+    by_domain: list[DomainStats]
+    last_ingest_at: datetime | None = None
+    db_path: str
+    region: str
+
+
+class Health(BaseModel):
+    status: Literal["ok", "degraded"]
+    version: str
+    db_ready: bool
+    n_items: int
