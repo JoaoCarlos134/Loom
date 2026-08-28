@@ -127,8 +127,15 @@ def map_jikan_anime(
     if mal_id is None:
         return None
 
-    canonical = raw.get("title") or raw.get("title_english") or raw.get("title_japanese")
-    if not isinstance(canonical, str) or not canonical.strip():
+    # Checked for blankness rather than truthiness: a whitespace-only `title`
+    # is truthy and would short-circuit an `or` chain, hiding a perfectly good
+    # title_english behind it.
+    canonical = None
+    for candidate in (raw.get("title"), raw.get("title_english"), raw.get("title_japanese")):
+        if isinstance(candidate, str) and candidate.strip():
+            canonical = candidate
+            break
+    if canonical is None:
         for entry in raw.get("titles") or []:
             if isinstance(entry, dict) and entry.get("type") == "Default":
                 canonical = entry.get("title")

@@ -131,6 +131,23 @@ class Ingester(ABC):
             result.status = "error"
             result.error = f"{type(exc).__name__}: {exc}"
             log.error("%s failed: %s\n%s", self.name, result.error, traceback.format_exc())
+            # Persist what was already fetched. A failure part-way through must
+            # not discard a whole run's worth of successful pages: upstream
+            # outages are routinely partial (Jikan serves a cached page 1 and
+            # 504s every deeper page), and that prefix is then the only data
+            # obtainable. Guarded separately because the failure being handled
+            # may itself have come from upsert_items.
+            if batch:
+                try:
+                    ins, upd = upsert_items(conn, batch)
+                    result.n_inserted += ins
+                    result.n_updated += upd
+                    log.info("%s: flushed %d buffered items after failure",
+                             self.name, len(batch))
+                except Exception:
+                    log.exception("%s: could not flush %d buffered items",
+                                  self.name, len(batch))
+                batch.clear()
         finally:
             await self.aclose()
             result.duration_s = time.perf_counter() - started
