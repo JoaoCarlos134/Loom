@@ -60,6 +60,24 @@ class Settings(BaseSettings):
     mal_csv_path: str = ""
     mal_csv_target_count: int = 0
 
+    # AniList GraphQL: the source that carries synopses and ranked tags.
+    # Driven by the MAL ids already in the catalog, so it runs after
+    # anime_mal_csv. target 0 -> every known id.
+    anilist_url: str = "https://graphql.anilist.co"
+    anilist_target_count: int = 0
+    anilist_page_size: int = 50  # AniList caps a page at 50
+    anilist_rate_per_sec: float = 1.0
+    anilist_rate_per_min: float = 30.0  # observed x-ratelimit-limit
+    anilist_max_retries: int = 5
+    # AniList tags are community-ranked 0-100; the long tail is weakly agreed.
+    anilist_min_tag_rank: int = 60
+
+    # MyAnimeList user ratings, from the same Kaggle archive as the anime
+    # table. Rows read, not rows written: ~40% carry no score and are skipped.
+    mal_ratings_filename: str = "animelists_cleaned.csv"
+    mal_ratings_path: str = ""
+    mal_ratings_target_count: int = 0
+
     http_cache_ttl_days: int = 30
 
     # --- server ---

@@ -105,9 +105,39 @@ CREATE TABLE ingest_runs (
 CREATE INDEX idx_runs_domain ON ingest_runs(domain, finished_at DESC);
 """
 
+MIGRATION_2 = """
+CREATE TABLE ratings (
+    user_uid TEXT NOT NULL,
+    item_uid TEXT NOT NULL,
+    rating   REAL NOT NULL,
+    rated_at TEXT,
+    PRIMARY KEY (user_uid, item_uid)
+) WITHOUT ROWID;
+"""
+
+MIGRATION_3 = """
+CREATE TABLE links (
+    item_uid   TEXT PRIMARY KEY,
+    work_uid   TEXT NOT NULL,
+    is_primary INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX idx_links_work ON links(work_uid);
+"""
+
+MIGRATION_4 = """
+CREATE TABLE popularity_norm (
+    item_uid TEXT PRIMARY KEY,
+    value    REAL NOT NULL
+) WITHOUT ROWID;
+"""
+
 # Append new migrations here; never modify an existing entry.
 MIGRATIONS: list[tuple[int, str]] = [
     (1, MIGRATION_1),
+    (2, MIGRATION_2),
+    (3, MIGRATION_3),
+    (4, MIGRATION_4),
 ]
 
 SCHEMA_VERSION = MIGRATIONS[-1][0]
@@ -226,6 +256,33 @@ def _chunks(seq: Sequence[Any], n: int) -> Iterator[Sequence[Any]]:
         yield seq[i : i + n]
 
 
+_UPSERT_RATING_SQL = """
+INSERT INTO ratings (user_uid, item_uid, rating, rated_at)
+VALUES (?, ?, ?, ?)
+ON CONFLICT(user_uid, item_uid) DO UPDATE SET
+    rating   = excluded.rating,
+    rated_at = excluded.rated_at
+"""
+
+
+def upsert_ratings(
+    conn: sqlite3.Connection, rows: Sequence[tuple[str, str, float, str | None]]
+) -> int:
+    """Idempotent bulk upsert of (user_uid, item_uid, rating, rated_at) tuples.
+
+    Returns the number of rows written. Unlike :func:`upsert_items` this does
+    *not* split inserts from updates: telling them apart means probing for
+    existing keys first, and at ~19M ratings that probe costs more than the
+    write it annotates. Rating sources are static dumps, so the split would
+    only ever read "all inserted" or "all updated" anyway.
+    """
+    if not rows:
+        return 0
+    with conn:  # single transaction
+        conn.executemany(_UPSERT_RATING_SQL, rows)
+    return len(rows)
+
+
 def start_ingest_run(conn: sqlite3.Connection, source: str, domain: str) -> int:
     with conn:
         cur = conn.execute(
@@ -265,6 +322,24 @@ def finish_ingest_run(
 
 _TOKEN_RE = re.compile(r"[^\W_]+", re.UNICODE)
 
+# Duplicate collapsing. Two sources describing one work are two rows on purpose
+# (`item_uid` is derived, and Phase 2 needs both to survive), so nothing is ever
+# merged or deleted -- reads simply show one row per work. `links` names the
+# winner; an item with no link row is a work of one and always shows.
+#
+# Deliberately not a source-preference list: ranking by source name here would
+# mean editing db.py to add a source, which the project invariant forbids.
+# `link.py` picks the richest row instead, by what the row actually contains.
+_PRIMARY_JOIN = "LEFT JOIN links l ON l.item_uid = i.item_uid"
+_PRIMARY_ONLY = "(l.item_uid IS NULL OR l.is_primary = 1)"
+
+# Ordering uses `recsys.popularity`'s calibrated value, not the raw count: raw
+# popularity means something different in every source. Falls back to the raw
+# number when nothing has been calibrated yet (a fresh database, or --no-link),
+# so ordering degrades to the old behaviour rather than collapsing.
+_POP_JOIN = "LEFT JOIN popularity_norm pn ON pn.item_uid = i.item_uid"
+_POP_ORDER = "COALESCE(pn.value, i.popularity)"
+
 
 def build_fts_query(q: str) -> str | None:
     """Turn free user text into a safe FTS5 MATCH expression.
@@ -294,13 +369,19 @@ def query_items(
 
     With ``q``, the FTS index drives the query and results are bm25-ranked with
     title weighted above alt_titles above description. Without ``q``, results
-    are ordered by in-source popularity.
+    are ordered by `recsys.popularity`'s cross-source calibrated popularity,
+    falling back to the raw count where nothing has been calibrated.
+
+    One row per *work*: where several sources describe the same thing, only the
+    row `link.py` marked primary is returned. Use :func:`get_item` to reach a
+    non-primary row directly by uid -- it is still there.
     """
     params: list[Any] = []
     where: list[str] = []
 
     if domain:
         where.append("i.domain = ?")
+    where.append(_PRIMARY_ONLY)  # no placeholder, so param order is unaffected
 
     match = build_fts_query(q) if q else None
     if q and match is None:
@@ -308,18 +389,21 @@ def query_items(
         return (0, [])
 
     if match:
-        base = "FROM items_fts f JOIN items i ON i.rowid = f.rowid WHERE items_fts MATCH ?"
+        base = (
+            "FROM items_fts f JOIN items i ON i.rowid = f.rowid "
+            f"{_PRIMARY_JOIN} {_POP_JOIN} WHERE items_fts MATCH ?"
+        )
         params.append(match)
         if domain:
             params.append(domain)
         tail = " AND " + " AND ".join(where) if where else ""
-        order = "ORDER BY bm25(items_fts, 10.0, 4.0, 1.0), i.popularity DESC"
+        order = f"ORDER BY bm25(items_fts, 10.0, 4.0, 1.0), {_POP_ORDER} DESC"
     else:
-        base = "FROM items i"
+        base = f"FROM items i {_PRIMARY_JOIN} {_POP_JOIN}"
         if domain:
             params.append(domain)
         tail = " WHERE " + " AND ".join(where) if where else ""
-        order = "ORDER BY i.popularity DESC, i.title ASC"
+        order = f"ORDER BY {_POP_ORDER} DESC, i.title ASC"
 
     total = conn.execute(f"SELECT COUNT(*) {base}{tail}", params).fetchone()[0]
     rows = conn.execute(
@@ -337,15 +421,29 @@ def get_item(conn: sqlite3.Connection, item_uid: str) -> UnifiedItem | None:
 
 
 def count_items(conn: sqlite3.Connection) -> int:
+    """Works, not rows -- what a reader of the catalog actually sees."""
+    return int(
+        conn.execute(
+            f"SELECT COUNT(*) FROM items i {_PRIMARY_JOIN} WHERE {_PRIMARY_ONLY}"
+        ).fetchone()[0]
+    )
+
+
+def count_rows(conn: sqlite3.Connection) -> int:
+    """Stored rows, duplicates included. The operator's view, not the reader's."""
     return int(conn.execute("SELECT COUNT(*) FROM items").fetchone()[0])
 
 
 def domain_stats(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    # n_items counts works; sources counts every source that contributed a row,
+    # including ones whose rows all lost the primary election. A source that
+    # supplied data is a source of the catalog whether or not it is displayed.
     rows = conn.execute(
-        """SELECT domain,
-                  COUNT(*) AS n_items,
+        f"""SELECT domain,
+                  SUM(CASE WHEN {_PRIMARY_ONLY} THEN 1 ELSE 0 END) AS n_items,
                   json_group_array(DISTINCT source) AS sources
-           FROM items GROUP BY domain ORDER BY n_items DESC"""
+           FROM items i {_PRIMARY_JOIN}
+           GROUP BY domain ORDER BY n_items DESC"""
     ).fetchall()
     last = {
         r["domain"]: r["finished_at"]

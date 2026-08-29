@@ -3,9 +3,11 @@
 Cross-domain hybrid recommender system (anime / books / music / movies / TV) that runs
 as a local desktop app. No server, no cloud, no admin rights.
 
-**Status: Phase 0** — project skeleton plus one domain (anime) ingested end to end
-from two sources: a live API (Jikan) and a static CSV dump (MyAnimeList via
-Kaggle). ~14.5k items. No recommendation models yet, by design.
+**Status: Phase 3 started** — project skeleton plus one domain (anime) ingested end
+to end from three sources: AniList (GraphQL), a static CSV dump (MyAnimeList via
+Kaggle) and Jikan. **14,490 works** shown from 27,340 stored rows, 80% carrying a
+real synopsis, plus **19.2M user ratings** from 106k users. No recommendation
+models yet, by design — the ratings and the text are their fuel.
 
 ---
 
@@ -60,10 +62,20 @@ Idempotent — safe to re-run.
 
 Two sources feed the `anime` domain:
 
-| Ingester | Source | Items | Cost |
+| Ingester | Source | Rows | Cost |
 |---|---|---|---|
-| `anime_mal_csv` | Kaggle MAL dump, static | ~14,478 | ~2 GB download once, then ~2 s |
-| `anime_jikan` | Jikan v4, live API | up to 2000 | 3 req/sec limiter |
+| `anime_mal_csv` | Kaggle MAL dump, static | ~14,478 items | ~2 GB download once, then ~2 s |
+| `anime_jikan` | Jikan v4, live API | up to 2000 items | 3 req/sec limiter |
+| `anime_anilist` | AniList GraphQL, live | ~14.5k items | ~10 min, 30 req/min, no API key |
+| `anime_mal_ratings` | same Kaggle archive | 19.2M ratings | ~75 s, grows the DB to ~1.3 GB |
+
+`anime_mal_ratings` is **not** in the default `INGESTERS` list. It is a one-off
+bulk load of Phase 3's training data rather than part of building the catalog,
+and it turns a 34 MB database into a 1.3 GB one. Run it deliberately:
+
+```powershell
+uv run python scripts/bootstrap.py --only anime_mal_ratings
+```
 
 `anime_mal_csv` downloads `azathoth42/myanimelist` through kagglehub on first
 run (cached in `~/.cache/kagglehub`, so later runs are offline) and reads only
@@ -80,6 +92,7 @@ Useful flags:
 
 ```powershell
 uv run python scripts/bootstrap.py --limit 100          # small run while developing
+uv run python scripts/bootstrap.py --only anime_mal_ratings  # load the 19.2M ratings
 uv run python scripts/bootstrap.py --no-ingest          # schema only
 uv run python scripts/bootstrap.py --only anime_mal_csv # skip the live API
 ```
@@ -113,7 +126,7 @@ No test touches the network.
 
 ```
 %LOCALAPPDATA%\Loom\
-  recsys.db          SQLite catalog (+ -wal / -shm sidecars)
+  recsys.db          SQLite catalog + ratings (+ -wal / -shm sidecars)
   cache\jikan\       HTTP response cache, sharded by URL hash
   logs\recsys.log    rotating log
 ```
@@ -155,17 +168,25 @@ src/recsys/api/server.py  FastAPI  ───────────┘
               routes.py   /api/health /api/items /api/items/{uid} /api/stats
               ui/         plain HTML + CSS + vanilla JS, served as static files
 
-src/recsys/db.py          SQLite: items + items_fts (FTS5) + ingest_runs
+src/recsys/db.py          SQLite: items + items_fts (FTS5) + ratings + links
+                                  + popularity_norm + ingest_runs
+           link.py        entity resolution: which rows are one work
+           popularity.py  one popularity scale across sources
            schemas.py     UnifiedItem — the one row shape all domains collapse into
            config.py      pydantic-settings, the only reader of the environment
 
 src/recsys/ingest/
-  base.py                 Ingester ABC + the generic fetch→map→upsert run loop
+  base.py                 Ingester ABC + the generic fetch→map→upsert run loop,
+                          and IngestRunner, the Protocol bootstrap runs against
   registry.py             name → ingester. The single seam for new domains.
   ratelimit.py            sliding-window limiter (3/s AND 60/min) + jittered backoff
   cache.py                on-disk response cache keyed by URL
+  kaggle.py               locate a file in a Kaggle dataset, download if absent
   anime_jikan.py          Jikan v4 → UnifiedItem
   anime_mal_csv.py        Kaggle MAL CSV dump → UnifiedItem
+  anime_anilist.py        AniList GraphQL → UnifiedItem (the source with text)
+  ratings_mal_csv.py      Kaggle MAL user lists → ratings rows (a sibling
+                          contract, not an Ingester — see below)
 ```
 
 Adding `anime_mal_csv` cost exactly what the abstraction promised: one new file
@@ -185,27 +206,105 @@ normalisation cost once, at ingest.
 drift from its parts. Two sources describing the same work stay separate rows —
 deduplication is Phase 2's job and needs both rows to survive to do it.
 
-**`mean_rating` is normalised to 0–10 at ingest; `popularity` is not normalised.**
-Ratings are comparable across sources once rescaled, so scaling belongs in the
-ingester. Popularity is a raw within-source size signal (MAL member count in both
-current sources) whose scale is meaningless across sources — pretending otherwise
-would silently corrupt any cross-domain ranking.
+**`mean_rating` is normalised at ingest; `popularity` is calibrated after it.**
+Rating scales are known up front, so each ingester rescales its own to 0–10.
+Popularity cannot work that way: a raw audience count means something different
+in every source, and no ingester can know the others' scales. So it is stored
+raw and reconciled afterwards.
 
-⚠️ **The second source made this bite.** `query_items` orders by `popularity DESC`
-globally, which was harmless with one source and is not any more. Jikan's counts
-are live 2026 figures for the top 25 titles (avg ~1.1M); the CSV dump is a 2018
-snapshot of the whole catalog (avg ~23k). The same work, *Fullmetal Alchemist:
-Brotherhood*, is 3,709,700 in Jikan and 1,199,091 in the dump — a 3× gap that is
-pure vintage, not popularity. So all 25 Jikan rows sort above all 14,478 CSV rows
-in the default listing. Fixing it properly means per-source normalisation
-(percentile rank within source) at query time, which is Phase 2 work; it is
-recorded here rather than papered over.
+The reconciliation is in `src/recsys/popularity.py`, run straight after linking
+because it needs to know which rows are the same work. Where two sources both
+carry a work, that pair of numbers is an anchor; the anchors define a mapping
+from one source's scale onto the reference's, and the result is written to
+`popularity_norm`. Reads order by that. Raw `popularity` is never modified — it
+is the honest source datum, and this is a second opinion stored beside it.
 
-**Two sources means duplicate works, on purpose.** 13 of the 25 Jikan rows
-describe an anime the CSV dump also carries, under a different `item_uid`
-(`anime:jikan:5114` vs `anime:mal:5114`). Both populate `external_ids.mal_id`,
-which is the join key Phase 2's entity resolution will reconcile them on. Search
-shows both today.
+It was a real problem, not a theoretical one. *Fullmetal Alchemist:
+Brotherhood* is one work carried by all three sources:
+
+| | raw | calibrated |
+|---|---|---|
+| `anilist` | 724,564 | 853,610 |
+| `jikan` | 3,709,700 | 1,265,703 |
+| `mal` | 1,199,091 | 1,199,091 |
+
+A 5.1× spread on vintage and definition alone, down to 1.48×. Before this,
+Jikan's *least* popular row outranked AniList's most popular and Jikan held the
+top seven slots of every listing.
+
+Two things this deliberately is **not**:
+
+- **Not percentile-within-source.** The obvious fix, and wrong: it assumes every
+  source samples the same population. Jikan's rows are the *top* 25 anime, so
+  ranking them among themselves puts its weakest row — still a top-25 title —
+  last in the catalog. It inverts the error rather than fixing it.
+- **Not a formula.** A fitted power law was measurably the wrong shape: against
+  12,821 anchors it overestimated the quiet end by 1.47× and underestimated the
+  popular end by 0.74×. The mapping is a binned monotone curve instead, which
+  assumes only that the relationship increases.
+
+The reference source is whichever covers most of the domain, chosen from the
+data — naming one would mean editing `popularity.py` to add a source. A domain's
+first source is its own reference, so books arriving with nothing to calibrate
+against simply work. With too few anchors to shape a curve it falls back to a
+median scale factor, and with none at all to quantile mapping, which is the only
+path that reintroduces the representative-sample assumption and therefore warns.
+
+**Three sources describe the same anime, and the catalog shows it once.** This
+used to be an open wart: `anime:jikan:5114` and `anime:mal:5114` are one work,
+and both appeared in search. Adding AniList would have made it three.
+
+The fix is *resolution*, not merging. `src/recsys/link.py` groups rows by an
+exact shared `external_ids.mal_id` — every anime source populates it, so this is
+an integer join with no thresholds and no fuzzy title matching — and writes a
+`links` row per group naming which row represents the work. `query_items`,
+`count_items` and `domain_stats` show only representatives; `get_item` still
+reaches any row by uid, and `link.work_members()` returns a work's full set.
+
+Nothing is merged and nothing is deleted, which matters more than it looks:
+
+- **Phase 3 wants the union, not the winner.** AniList brings the synopsis and
+  the ranked tags; the 2018 dump brings a member count from a different era.
+  A merge would have to pick one of each and throw the rest away, permanently.
+- **A source stays removable.** Drop an ingester, re-run the linker, and the
+  catalog is exactly what the remaining sources say. After a merge there is no
+  way back.
+- **`item_uid` stays derived.** Merging would need a synthetic row belonging to
+  no source, and every id in the system is derived from its parts on purpose.
+
+**The representative is chosen by content, never by source name.** `_richness()`
+prefers a row that has a synopsis, then more tags, then more ratings, with a
+deterministic tiebreak so a rebuild never reshuffles the catalog. This is why
+AniList rows win today — they carry text — but the rule never mentions AniList.
+A source-preference list would put source names inside `link.py` and `db.py` and
+make "add a source" mean "edit them", which is exactly the coupling the
+project's one invariant forbids.
+
+Resolution runs from `bootstrap.py` after ingest, never as a registry entry: it
+has to see every source's rows, and a registry entry would let `INGESTERS`
+ordering put it first. It is a full rebuild each time — tens of thousands of
+rows, well under a second, and an incremental linker would have to reason about
+rows whose ids changed underneath it. `--no-link` skips it.
+
+**Ratings got a sibling contract, not an `Ingester` subclass.** The `Ingester`
+pipeline is fetch → `UnifiedItem` → `upsert_items`, and every part of it is
+wrong for a rating: it is not a catalog row, it goes to a different table, and
+there are 19.2M of them rather than 14.5k. Unifying them would have meant
+parameterising the run loop over row type, upsert function and dedup strategy —
+an abstraction over two implementations that share only their bookkeeping. So
+`ratings_mal_csv.py` shares `IngestResult` and the `ingest_runs` row, duplicates
+the ~20-line batching loop, and satisfies a Protocol (`IngestRunner`) instead of
+a base class. `bootstrap.py` and `registry.py` cannot tell the two apart.
+
+**Ratings carry no foreign key to `items`.** The two loaders can then run in
+either order, and a rating for an anime missing from the catalog survives rather
+than being silently dropped. In practice all 19.2M resolve — the join is exact,
+because both sides derive their uid through the same `make_item_uid`.
+
+**The `ratings` table has no secondary index.** Its only reader will be a bulk
+export to parquet, which is a full scan; an index on `item_uid` would cost a
+random-order build over 19.2M rows at load time and buy nothing yet. Append a
+migration when a query actually needs one.
 
 **`raw_json` is stored per item.** A mapping bug is then fixable offline: correct
 `map_item`, re-run the mapper over the DB, never re-hit the API.
@@ -239,7 +338,7 @@ through `textContent` — catalog synopses are third-party text and never touch
 | 2 | Entity resolution (same work, two sources) | new `links` table via a new migration |
 | 2 | Feature matrices | pyarrow → parquet under `DATA_DIR`, read from `items` |
 | 3 | Content-based / collaborative / hybrid models | new `recsys/models/` package; reads parquet, writes scores |
-| 3 | User ratings and feedback | new `ratings` table via a new migration |
+| 3 | ~~User ratings and feedback~~ **done** | `ratings` table, migration 2, `ratings_mal_csv.py` |
 | 4 | Region-aware availability | `REGION` setting — already threaded through config |
 
 The invariant: **adding a domain must not require editing `db.py`, `routes.py`,
@@ -259,3 +358,7 @@ worked around.
 | `GET /api/stats` | per-domain counts, sources, last successful ingest |
 
 Interactive docs at `/docs` while the server runs.
+
+`ratings` is not exposed over the API. Nothing reads it yet — it exists so
+Phase 3's models have something to train on, and a route would be a guess at
+what they will need.

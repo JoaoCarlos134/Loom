@@ -32,6 +32,7 @@ from typing import Any, AsyncIterator
 
 from recsys.config import Settings
 from recsys.ingest.base import Ingester
+from recsys.ingest.kaggle import resolve_kaggle_file
 from recsys.log import get_logger
 from recsys.schemas import Creator, UnifiedItem, utcnow
 
@@ -211,30 +212,13 @@ class MalCsvAnimeIngester(Ingester):
     # ---- source file ------------------------------------------------------
 
     def resolve_path(self) -> Path:
-        """Locate the CSV, downloading the dataset only if no path is configured.
-
-        kagglehub caches under ``~/.cache/kagglehub``, so the ~2 GB archive is
-        fetched at most once per machine and later runs are offline.
-        """
-        if self.explicit_path:
-            path = Path(self.explicit_path)
-            if not path.is_file():
-                raise FileNotFoundError(f"MAL_CSV_PATH does not exist: {path}")
-            return path
-
-        # Imported lazily: only this ingester needs kagglehub, and only when it
-        # has not been pointed at a local file.
-        import kagglehub
-
-        log.info("resolving %s via kagglehub (cached after the first run)", self.dataset)
-        root = Path(kagglehub.dataset_download(self.dataset))
-        path = root / self.filename
-        if not path.is_file():
-            available = sorted(p.name for p in root.glob("*.csv"))
-            raise FileNotFoundError(
-                f"{self.filename!r} not in {root}; available: {available}"
-            )
-        return path
+        """Locate the CSV, downloading the dataset only if no path is configured."""
+        return resolve_kaggle_file(
+            dataset=self.dataset,
+            filename=self.filename,
+            explicit_path=self.explicit_path,
+            setting_name="MAL_CSV_PATH",
+        )
 
     # ---- Ingester contract ------------------------------------------------
 

@@ -17,7 +17,7 @@ import time
 import traceback
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, ClassVar
+from typing import Any, AsyncIterator, ClassVar, Protocol
 
 import sqlite3
 
@@ -46,6 +46,23 @@ class IngestResult:
     status: str = "ok"
     error: str | None = None
     warnings: list[str] = field(default_factory=list)
+
+
+class IngestRunner(Protocol):
+    """Everything ``bootstrap.py`` needs from a thing it can run.
+
+    Two contracts satisfy it. :class:`Ingester` below is the catalog one --
+    fetch -> ``UnifiedItem`` -> ``upsert_items``. Non-item data gets a sibling
+    instead of a subclass (see ``ingest/ratings_mal_csv.py``), because that
+    pipeline is wrong for it end to end. This Protocol is what keeps bootstrap
+    and the registry indifferent to which kind they are holding.
+    """
+
+    name: str
+    domain: str
+    source: str
+
+    async def run(self, conn: sqlite3.Connection) -> IngestResult: ...
 
 
 class Ingester(ABC):

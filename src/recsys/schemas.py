@@ -22,6 +22,37 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def make_item_uid(domain: str, source: str, source_id: str) -> str:
+    """The one place the item uid format is written down.
+
+    ``UnifiedItem`` derives its ``item_uid`` through here, and so does anything
+    that has to *point at* an item without holding one -- ratings, for example,
+    which carry a source's own anime id and nothing else.
+    """
+    return f"{domain}:{source}:{source_id}"
+
+
+def make_work_uid(domain: str, key: str, value: str) -> str:
+    """Identify a *work* -- the thing several source rows describe.
+
+    ``anime:mal:5114`` and ``anime:anilist:5114`` are two rows about one work.
+    Both map to ``work:anime:mal_id:5114``. Derived from the shared external id
+    rather than assigned, so re-running the linker cannot invent a new identity
+    for a group it has already seen.
+    """
+    return f"work:{domain}:{key}:{value}"
+
+
+def make_user_uid(source: str, user_id: str) -> str:
+    """Namespace a user id by the dataset it came from.
+
+    MAL usernames, MovieLens user numbers and Goodreads user numbers share one
+    ``ratings`` table and collide freely otherwise -- MovieLens user ``21`` is
+    not MAL user ``21``.
+    """
+    return f"{source}:{user_id}"
+
+
 class Creator(BaseModel):
     """A person or organisation attached to an item.
 
@@ -150,7 +181,7 @@ class UnifiedItem(BaseModel):
 
     @model_validator(mode="after")
     def _derive_uid(self) -> "UnifiedItem":
-        expected = f"{self.domain}:{self.source}:{self.source_id}"
+        expected = make_item_uid(self.domain, self.source, self.source_id)
         if self.item_uid and self.item_uid != expected:
             raise ValueError(f"item_uid {self.item_uid!r} does not match {expected!r}")
         object.__setattr__(self, "item_uid", expected)

@@ -1,0 +1,1249 @@
+[
+ {
+  "id": 1,
+  "idMal": 1,
+  "siteUrl": "https://anilist.co/anime/1",
+  "format": "TV",
+  "seasonYear": 1998,
+  "popularity": 465213,
+  "averageScore": 86,
+  "startDate": {
+   "year": 1998
+  },
+  "title": {
+   "romaji": "Cowboy Bebop",
+   "english": "Cowboy Bebop",
+   "native": "カウボーイビバップ"
+  },
+  "synonyms": [
+   "카우보이 비밥",
+   "קאובוי ביבופ",
+   "คาวบอย บีบ๊อป",
+   "Ковбой Бибоп",
+   "Καουμπόηδες του Διαστήματος",
+   "Kowboj Bebop"
+  ],
+  "description": "Enter a world in the distant future, where Bounty Hunters roam the solar system. Spike and Jet, bounty hunting partners, set out on journeys in an ever struggling effort to win bounty rewards to survive.<br><br>\nWhile traveling, they meet up with other very interesting people. Could Faye, the beautiful and ridiculously poor gambler, Edward, the computer genius, and Ein, the engineered dog be a good addition to the group?",
+  "genres": [
+   "Action",
+   "Adventure",
+   "Drama",
+   "Sci-Fi"
+  ],
+  "tags": [
+   {
+    "name": "Space",
+    "rank": 94,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Crime",
+    "rank": 92,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Episodic",
+    "rank": 89,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Ensemble Cast",
+    "rank": 86,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Primarily Adult Cast",
+    "rank": 85,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Philosophy",
+    "rank": 84,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Tragedy",
+    "rank": 83,
+    "isMediaSpoiler": true
+   },
+   {
+    "name": "Travel",
+    "rank": 82,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Found Family",
+    "rank": 82,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Noir",
+    "rank": 80,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Anti-Hero",
+    "rank": 79,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Guns",
+    "rank": 78,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Male Protagonist",
+    "rank": 78,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Cyberpunk",
+    "rank": 78,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Female Protagonist",
+    "rank": 75,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Heterosexual",
+    "rank": 72,
+    "isMediaSpoiler": true
+   },
+   {
+    "name": "Terrorism",
+    "rank": 69,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Martial Arts",
+    "rank": 66,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Cyborg",
+    "rank": 66,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Tomboy",
+    "rank": 66,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Cowboys",
+    "rank": 65,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Amnesia",
+    "rank": 62,
+    "isMediaSpoiler": true
+   },
+   {
+    "name": "Work",
+    "rank": 60,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Gambling",
+    "rank": 59,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Police",
+    "rank": 52,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Yakuza",
+    "rank": 51,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Drugs",
+    "rank": 50,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Nudity",
+    "rank": 49,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Cult",
+    "rank": 47,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Tanned Skin",
+    "rank": 42,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Circus",
+    "rank": 36,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "CGI",
+    "rank": 20,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "LGBTQ+ Themes",
+    "rank": 20,
+    "isMediaSpoiler": false
+   }
+  ],
+  "studios": {
+   "edges": [
+    {
+     "isMain": true,
+     "node": {
+      "name": "Sunrise"
+     }
+    },
+    {
+     "isMain": false,
+     "node": {
+      "name": "Bandai Visual"
+     }
+    },
+    {
+     "isMain": false,
+     "node": {
+      "name": "Bandai Entertainment"
+     }
+    }
+   ]
+  },
+  "coverImage": {
+   "large": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx1-GCsPm7waJ4kS.png"
+  },
+  "stats": {
+   "scoreDistribution": [
+    {
+     "score": 10,
+     "amount": 626
+    },
+    {
+     "score": 20,
+     "amount": 202
+    },
+    {
+     "score": 30,
+     "amount": 486
+    },
+    {
+     "score": 40,
+     "amount": 973
+    },
+    {
+     "score": 50,
+     "amount": 2627
+    },
+    {
+     "score": 60,
+     "amount": 5239
+    },
+    {
+     "score": 70,
+     "amount": 15734
+    },
+    {
+     "score": 80,
+     "amount": 34332
+    },
+    {
+     "score": 90,
+     "amount": 56401
+    },
+    {
+     "score": 100,
+     "amount": 53685
+    }
+   ]
+  },
+  "relations": {
+   "edges": [
+    {
+     "relationType": "SIDE_STORY",
+     "node": {
+      "id": 5,
+      "idMal": 5,
+      "type": "ANIME",
+      "format": "MOVIE",
+      "title": {
+       "romaji": "Cowboy Bebop: Tengoku no Tobira"
+      }
+     }
+    },
+    {
+     "relationType": "SIDE_STORY",
+     "node": {
+      "id": 17205,
+      "idMal": 17205,
+      "type": "ANIME",
+      "format": "SPECIAL",
+      "title": {
+       "romaji": "Cowboy Bebop: Ein no Natsuyasumi"
+      }
+     }
+    },
+    {
+     "relationType": "ADAPTATION",
+     "node": {
+      "id": 30173,
+      "idMal": 173,
+      "type": "MANGA",
+      "format": "MANGA",
+      "title": {
+       "romaji": "Cowboy Bebop"
+      }
+     }
+    },
+    {
+     "relationType": "ADAPTATION",
+     "node": {
+      "id": 30174,
+      "idMal": 174,
+      "type": "MANGA",
+      "format": "MANGA",
+      "title": {
+       "romaji": "Shooting Star Bebop: Cowboy Bebop"
+      }
+     }
+    },
+    {
+     "relationType": "SUMMARY",
+     "node": {
+      "id": 4037,
+      "idMal": 4037,
+      "type": "ANIME",
+      "format": "SPECIAL",
+      "title": {
+       "romaji": "Cowboy Bebop: Yoseatsume Blues"
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "id": 5114,
+  "idMal": 5114,
+  "siteUrl": "https://anilist.co/anime/5114",
+  "format": "TV",
+  "seasonYear": 2009,
+  "popularity": 724564,
+  "averageScore": 90,
+  "startDate": {
+   "year": 2009
+  },
+  "title": {
+   "romaji": "Hagane no Renkinjutsushi: FULLMETAL ALCHEMIST",
+   "english": "Fullmetal Alchemist: Brotherhood",
+   "native": "鋼の錬金術師 FULLMETAL ALCHEMIST"
+  },
+  "synonyms": [
+   "FMA",
+   "FMAB",
+   "Hagaren",
+   "الخيميائي الفولاذي",
+   "אלכימאי המתכת: אחוות אחים",
+   "Full Metal Alchemist: Brotherhood",
+   "钢之炼金术师 FULLMETAL ALCHEMIST",
+   "แขนกล คนแปรธาตุ: บราเธอร์ฮูด",
+   "Stalowy alchemik: Misja braci",
+   "Сталевий алхімік. Братерство",
+   "Стальной алхимик: Братство"
+  ],
+  "description": "\"In order for something to be obtained, something of equal value must be lost.\"\n<br><br>\nAlchemy is bound by this Law of Equivalent Exchange—something the young brothers Edward and Alphonse Elric only realize after attempting human transmutation: the one forbidden act of alchemy. They pay a terrible price for their transgression—Edward loses his left leg, Alphonse his physical body. It is only by the desperate sacrifice of Edward's right arm that he is able to affix Alphonse's soul to a suit of armor. Devastated and alone, it is the hope that they would both eventually return to their original bodies that gives Edward the inspiration to obtain metal limbs called \"automail\" and become a state alchemist, the Fullmetal Alchemist.\n<br><br>\nThree years of searching later, the brothers seek the Philosopher's Stone, a mythical relic that allows an alchemist to overcome the Law of Equivalent Exchange. Even with military allies Colonel Roy Mustang, Lieutenant Riza Hawkeye, and Lieutenant Colonel Maes Hughes on their side, the brothers find themselves caught up in a nationwide conspiracy that leads them not only to the true nature of the elusive Philosopher's Stone, but their country's murky history as well. In between finding a serial killer and racing against time, Edward and Alphonse must ask themselves if what they are doing will make them human again... or take away their humanity.\n<br><br>\n(Source: MAL Rewrite)",
+  "genres": [
+   "Action",
+   "Adventure",
+   "Drama",
+   "Fantasy"
+  ],
+  "tags": [
+   {
+    "name": "Alchemy",
+    "rank": 97,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Conspiracy",
+    "rank": 94,
+    "isMediaSpoiler": true
+   },
+   {
+    "name": "Military",
+    "rank": 92,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "War",
+    "rank": 90,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Tragedy",
+    "rank": 89,
+    "isMediaSpoiler": true
+   },
+   {
+    "name": "Shounen",
+    "rank": 88,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Politics",
+    "rank": 84,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Male Protagonist",
+    "rank": 83,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Philosophy",
+    "rank": 82,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Ensemble Cast",
+    "rank": 79,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Coming of Age",
+    "rank": 78,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Fugitive",
+    "rank": 74,
+    "isMediaSpoiler": true
+   },
+   {
+    "name": "Super Power",
+    "rank": 74,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Foreign",
+    "rank": 72,
+    "isMediaSpoiler": true
+   },
+   {
+    "name": "Gods",
+    "rank": 72,
+    "isMediaSpoiler": true
+   },
+   {
+    "name": "Steampunk",
+    "rank": 72,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Disability",
+    "rank": 72,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Cyborg",
+    "rank": 70,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Revenge",
+    "rank": 70,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Necromancy",
+    "rank": 70,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Travel",
+    "rank": 69,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Lost Civilization",
+    "rank": 67,
+    "isMediaSpoiler": true
+   },
+   {
+    "name": "Anachronism",
+    "rank": 66,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Chimera",
+    "rank": 63,
+    "isMediaSpoiler": true
+   },
+   {
+    "name": "Dissociative Identities",
+    "rank": 63,
+    "isMediaSpoiler": true
+   },
+   {
+    "name": "Primarily Male Cast",
+    "rank": 62,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Religion",
+    "rank": 62,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Gore",
+    "rank": 60,
+    "isMediaSpoiler": true
+   },
+   {
+    "name": "Slapstick",
+    "rank": 60,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Orphan",
+    "rank": 60,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Body Horror",
+    "rank": 57,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Urban Fantasy",
+    "rank": 53,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Kuudere",
+    "rank": 52,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Shapeshifting",
+    "rank": 52,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Guns",
+    "rank": 51,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Demons",
+    "rank": 51,
+    "isMediaSpoiler": true
+   },
+   {
+    "name": "Chibi",
+    "rank": 50,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Human Experimentation",
+    "rank": 50,
+    "isMediaSpoiler": true
+   },
+   {
+    "name": "Swordplay",
+    "rank": 49,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Adoption",
+    "rank": 49,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Trains",
+    "rank": 49,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Cannibalism",
+    "rank": 47,
+    "isMediaSpoiler": true
+   },
+   {
+    "name": "Heterosexual",
+    "rank": 43,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Desert",
+    "rank": 42,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Tanned Skin",
+    "rank": 40,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Tsundere",
+    "rank": 31,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Crossdressing",
+    "rank": 28,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Snowscape",
+    "rank": 28,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Cultivation",
+    "rank": 20,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Zombie",
+    "rank": 20,
+    "isMediaSpoiler": true
+   }
+  ],
+  "studios": {
+   "edges": [
+    {
+     "isMain": true,
+     "node": {
+      "name": "bones"
+     }
+    },
+    {
+     "isMain": false,
+     "node": {
+      "name": "Aniplex"
+     }
+    },
+    {
+     "isMain": false,
+     "node": {
+      "name": "Square Enix"
+     }
+    },
+    {
+     "isMain": false,
+     "node": {
+      "name": "Mainichi Broadcasting System"
+     }
+    },
+    {
+     "isMain": false,
+     "node": {
+      "name": "Aniplex of America"
+     }
+    }
+   ]
+  },
+  "coverImage": {
+   "large": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx5114-nSWCgQlmOMtj.jpg"
+  },
+  "stats": {
+   "scoreDistribution": [
+    {
+     "score": 10,
+     "amount": 2279
+    },
+    {
+     "score": 20,
+     "amount": 312
+    },
+    {
+     "score": 30,
+     "amount": 540
+    },
+    {
+     "score": 40,
+     "amount": 1008
+    },
+    {
+     "score": 50,
+     "amount": 2693
+    },
+    {
+     "score": 60,
+     "amount": 4765
+    },
+    {
+     "score": 70,
+     "amount": 15838
+    },
+    {
+     "score": 80,
+     "amount": 42209
+    },
+    {
+     "score": 90,
+     "amount": 107624
+    },
+    {
+     "score": 100,
+     "amount": 153806
+    }
+   ]
+  },
+  "relations": {
+   "edges": [
+    {
+     "relationType": "ADAPTATION",
+     "node": {
+      "id": 30025,
+      "idMal": 25,
+      "type": "MANGA",
+      "format": "MANGA",
+      "title": {
+       "romaji": "Hagane no Renkinjutsushi"
+      }
+     }
+    },
+    {
+     "relationType": "SIDE_STORY",
+     "node": {
+      "id": 6421,
+      "idMal": 6421,
+      "type": "ANIME",
+      "format": "OVA",
+      "title": {
+       "romaji": "Hagane no Renkinjutsushi: FULLMETAL ALCHEMIST Mihousou Episode"
+      }
+     }
+    },
+    {
+     "relationType": "SIDE_STORY",
+     "node": {
+      "id": 9135,
+      "idMal": 9135,
+      "type": "ANIME",
+      "format": "MOVIE",
+      "title": {
+       "romaji": "Hagane no Renkinjutsushi: Milos no Seinaru Hoshi"
+      }
+     }
+    },
+    {
+     "relationType": "ALTERNATIVE",
+     "node": {
+      "id": 121,
+      "idMal": 121,
+      "type": "ANIME",
+      "format": "TV",
+      "title": {
+       "romaji": "Hagane no Renkinjutsushi"
+      }
+     }
+    },
+    {
+     "relationType": "SPIN_OFF",
+     "node": {
+      "id": 7902,
+      "idMal": 7902,
+      "type": "ANIME",
+      "format": "SPECIAL",
+      "title": {
+       "romaji": "Hagane no Renkinjutsushi: FULLMETAL ALCHEMIST - Arakawa Hiromu Kaki Oroshi 4-koma Gekijou"
+      }
+     }
+    },
+    {
+     "relationType": "CHARACTER",
+     "node": {
+      "id": 195600,
+      "idMal": 62001,
+      "type": "ANIME",
+      "format": "TV",
+      "title": {
+       "romaji": "Yomi no Tsugai"
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "id": 9253,
+  "idMal": 9253,
+  "siteUrl": "https://anilist.co/anime/9253",
+  "format": "TV",
+  "seasonYear": 2011,
+  "popularity": 591595,
+  "averageScore": 89,
+  "startDate": {
+   "year": 2011
+  },
+  "title": {
+   "romaji": "Steins;Gate",
+   "english": "Steins;Gate",
+   "native": "シュタインズ・ゲート"
+  },
+  "synonyms": [
+   "S;G",
+   "סטיינס;גייט",
+   "命运石之门",
+   "Врата;Штейна"
+  ],
+  "description": "Self-proclaimed mad scientist Okabe Rintarou lives in a small room in Akihabara, where he invents \"future gadgets\" with fellow lab members Shiina Mayuri, his air-headed childhood friend, and Hashida Itaru, an otaku hacker. The three pass the time by tinkering with their latest creation, a \"Phone Microwave\" that can be controlled through text messages. \n<br><br>\nThe lab members soon face a string of mysterious incidents that lead to a game-changing discovery: the Phone Microwave can send emails to the past and thus alter history. Adapted from the critically acclaimed visual novel by 5pb. and Nitroplus, Steins;Gate takes Okabe to the depths of scientific theory and human despair as he faces the dire consequences of changing the past.",
+  "genres": [
+   "Drama",
+   "Psychological",
+   "Sci-Fi",
+   "Thriller"
+  ],
+  "tags": [
+   {
+    "name": "Time Manipulation",
+    "rank": 98,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Alternate Universe",
+    "rank": 94,
+    "isMediaSpoiler": true
+   },
+   {
+    "name": "Time Loop",
+    "rank": 94,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Conspiracy",
+    "rank": 89,
+    "isMediaSpoiler": true
+   },
+   {
+    "name": "Tragedy",
+    "rank": 88,
+    "isMediaSpoiler": true
+   },
+   {
+    "name": "Memory Manipulation",
+    "rank": 85,
+    "isMediaSpoiler": true
+   },
+   {
+    "name": "Denpa",
+    "rank": 81,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Male Protagonist",
+    "rank": 80,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Urban",
+    "rank": 79,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Dystopian",
+    "rank": 78,
+    "isMediaSpoiler": true
+   },
+   {
+    "name": "Philosophy",
+    "rank": 76,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Primarily Adult Cast",
+    "rank": 76,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Chuunibyou",
+    "rank": 73,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Dissociative Identities",
+    "rank": 72,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Cosmic Horror",
+    "rank": 70,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Tsundere",
+    "rank": 68,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Otaku Culture",
+    "rank": 67,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Heterosexual",
+    "rank": 64,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Ensemble Cast",
+    "rank": 63,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Kuudere",
+    "rank": 61,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Suicide",
+    "rank": 60,
+    "isMediaSpoiler": true
+   },
+   {
+    "name": "Criminal Organization",
+    "rank": 60,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Amnesia",
+    "rank": 57,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Seinen",
+    "rank": 55,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "War",
+    "rank": 51,
+    "isMediaSpoiler": true
+   },
+   {
+    "name": "Clone",
+    "rank": 50,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Cosplay",
+    "rank": 50,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Detective",
+    "rank": 50,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Espionage",
+    "rank": 50,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Human Experimentation",
+    "rank": 50,
+    "isMediaSpoiler": true
+   },
+   {
+    "name": "Post-Apocalyptic",
+    "rank": 49,
+    "isMediaSpoiler": true
+   },
+   {
+    "name": "Femboy",
+    "rank": 48,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Gender Bending",
+    "rank": 46,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Transgender",
+    "rank": 40,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Maids",
+    "rank": 39,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Trains",
+    "rank": 37,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Shrine Maiden",
+    "rank": 36,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "LGBTQ+ Themes",
+    "rank": 10,
+    "isMediaSpoiler": false
+   }
+  ],
+  "studios": {
+   "edges": [
+    {
+     "isMain": false,
+     "node": {
+      "name": "Frontier Works"
+     }
+    },
+    {
+     "isMain": false,
+     "node": {
+      "name": "Funimation"
+     }
+    },
+    {
+     "isMain": false,
+     "node": {
+      "name": "Media Factory"
+     }
+    },
+    {
+     "isMain": false,
+     "node": {
+      "name": "Movic"
+     }
+    },
+    {
+     "isMain": false,
+     "node": {
+      "name": "AT-X"
+     }
+    },
+    {
+     "isMain": true,
+     "node": {
+      "name": "WHITE FOX"
+     }
+    },
+    {
+     "isMain": false,
+     "node": {
+      "name": "Kadokawa Pictures Japan"
+     }
+    },
+    {
+     "isMain": false,
+     "node": {
+      "name": "Nitroplus"
+     }
+    }
+   ]
+  },
+  "coverImage": {
+   "large": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx9253-tIUXF2gfU8Sg.jpg"
+  },
+  "stats": {
+   "scoreDistribution": [
+    {
+     "score": 10,
+     "amount": 1164
+    },
+    {
+     "score": 20,
+     "amount": 385
+    },
+    {
+     "score": 30,
+     "amount": 797
+    },
+    {
+     "score": 40,
+     "amount": 1289
+    },
+    {
+     "score": 50,
+     "amount": 2799
+    },
+    {
+     "score": 60,
+     "amount": 4805
+    },
+    {
+     "score": 70,
+     "amount": 13448
+    },
+    {
+     "score": 80,
+     "amount": 32064
+    },
+    {
+     "score": 90,
+     "amount": 74490
+    },
+    {
+     "score": 100,
+     "amount": 106589
+    }
+   ]
+  },
+  "relations": {
+   "edges": [
+    {
+     "relationType": "SEQUEL",
+     "node": {
+      "id": 10863,
+      "idMal": 10863,
+      "type": "ANIME",
+      "format": "OVA",
+      "title": {
+       "romaji": "Steins;Gate: Oukoubakko no Poriomania"
+      }
+     }
+    },
+    {
+     "relationType": "SIDE_STORY",
+     "node": {
+      "id": 20907,
+      "idMal": 27957,
+      "type": "ANIME",
+      "format": "ONA",
+      "title": {
+       "romaji": "Steins;Gate: Soumei Eichi no Cognitive Computing"
+      }
+     }
+    },
+    {
+     "relationType": "ALTERNATIVE",
+     "node": {
+      "id": 21624,
+      "idMal": 32188,
+      "type": "ANIME",
+      "format": "OVA",
+      "title": {
+       "romaji": "Steins;Gate: Kyoukaimenjou no Missing Link - Divide By Zero"
+      }
+     }
+    },
+    {
+     "relationType": "ALTERNATIVE",
+     "node": {
+      "id": 47517,
+      "idMal": 17517,
+      "type": "MANGA",
+      "format": "MANGA",
+      "title": {
+       "romaji": "Steins;Gate"
+      }
+     }
+    },
+    {
+     "relationType": "SIDE_STORY",
+     "node": {
+      "id": 11577,
+      "idMal": 11577,
+      "type": "ANIME",
+      "format": "MOVIE",
+      "title": {
+       "romaji": "Steins;Gate: Fuka Ryouiki no Déjà vu"
+      }
+     }
+    },
+    {
+     "relationType": "ALTERNATIVE",
+     "node": {
+      "id": 58897,
+      "idMal": 28897,
+      "type": "MANGA",
+      "format": "MANGA",
+      "title": {
+       "romaji": "Steins;Gate: Shijou Saikyou no Slight Fever"
+      }
+     }
+    },
+    {
+     "relationType": "ALTERNATIVE",
+     "node": {
+      "id": 127015,
+      "idMal": null,
+      "type": "MANGA",
+      "format": "NOVEL",
+      "title": {
+       "romaji": "STEINS;GATE: Enkan Rensa no Uroborosu"
+      }
+     }
+    },
+    {
+     "relationType": "CHARACTER",
+     "node": {
+      "id": 10519,
+      "idMal": 10519,
+      "type": "ANIME",
+      "format": "ONA",
+      "title": {
+       "romaji": "Mahou Shoujo Sonico☆Magica"
+      }
+     }
+    },
+    {
+     "relationType": "CHARACTER",
+     "node": {
+      "id": 91997,
+      "idMal": 74345,
+      "type": "MANGA",
+      "format": "MANGA",
+      "title": {
+       "romaji": "Steins;Gate: Hoshikuzu no Duplet"
+      }
+     }
+    },
+    {
+     "relationType": "OTHER",
+     "node": {
+      "id": 4975,
+      "idMal": 4975,
+      "type": "ANIME",
+      "format": "TV",
+      "title": {
+       "romaji": "ChäoS;HEAd"
+      }
+     }
+    },
+    {
+     "relationType": "OTHER",
+     "node": {
+      "id": 13599,
+      "idMal": 13599,
+      "type": "ANIME",
+      "format": "TV",
+      "title": {
+       "romaji": "Robotics;Notes"
+      }
+     }
+    },
+    {
+     "relationType": "OTHER",
+     "node": {
+      "id": 21708,
+      "idMal": 32962,
+      "type": "ANIME",
+      "format": "TV",
+      "title": {
+       "romaji": "Occultic;Nine"
+      }
+     }
+    }
+   ]
+  }
+ }
+]

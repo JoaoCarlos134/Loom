@@ -23,12 +23,15 @@ if SRC.is_dir() and str(SRC) not in sys.path:
 from recsys.config import get_settings  # noqa: E402
 from recsys.db import (  # noqa: E402
     count_items,
+    count_rows,
     domain_stats,
     init_db,
     session,
 )
 from recsys.ingest.base import IngestResult  # noqa: E402
 from recsys.ingest.registry import available, get_ingester  # noqa: E402
+from recsys.link import LinkResult, rebuild_links  # noqa: E402
+from recsys.popularity import PopularityResult, rebuild_popularity  # noqa: E402
 from recsys.log import get_logger, setup_logging  # noqa: E402
 
 log = get_logger("recsys.bootstrap")
@@ -63,7 +66,11 @@ async def run_ingesters(names: list[str], limit: int | None) -> list[IngestResul
     return results
 
 
-def report(results: list[IngestResult]) -> None:
+def report(
+    results: list[IngestResult],
+    links: LinkResult | None,
+    pops: PopularityResult | None,
+) -> None:
     settings = get_settings()
 
     if results:
@@ -80,8 +87,27 @@ def report(results: list[IngestResult]) -> None:
             if r.error:
                 print(f"\n  !! {r.source}: {r.error}")
 
+    if links is not None:
+        print("\nEntity resolution")
+        print(f"  {links.n_works} works span {links.n_linked} rows; "
+              f"{links.n_collapsed} duplicate rows hidden from listings")
+
+    if pops is not None and pops.scales:
+        print("\nPopularity calibration")
+        print(table(
+            ["domain", "source", "method", "rows", "anchors", "knots", "scale"],
+            [[
+                s.domain, s.source, s.method, str(s.n_rows), str(s.n_anchors),
+                str(len(s.knots)), f"{s.offset:+.3f}",
+            ] for s in pops.scales],
+        ))
+        for s in pops.fallbacks:
+            print(f"\n  !! {s.domain}/{s.source}: no shared works to calibrate on; "
+                  f"quantile-mapped, which assumes its rows are representative")
+
     with session() as conn:
         total = count_items(conn)
+        rows = count_rows(conn)
         stats = domain_stats(conn)
 
     print("\nCatalog")
@@ -96,7 +122,8 @@ def report(results: list[IngestResult]) -> None:
     else:
         print("  (empty)")
 
-    print(f"\n  total items : {total}")
+    dedup = f"  ({rows} rows before dedup)" if rows != total else ""
+    print(f"\n  total items : {total}{dedup}")
     print(f"  database    : {settings.db_path}")
     print(f"  cache       : {settings.cache_dir}")
     print(f"  region      : {settings.region}")
@@ -110,6 +137,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="override the per-ingester target item count")
     parser.add_argument("--no-ingest", action="store_true",
                         help="initialise the schema and report, but fetch nothing")
+    parser.add_argument("--no-link", action="store_true",
+                        help="skip entity resolution, leaving duplicates visible")
     args = parser.parse_args(argv)
 
     setup_logging()
@@ -127,7 +156,19 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(f"unknown ingester(s) {unknown}; available: {available()}")
         results = asyncio.run(run_ingesters(names, args.limit))
 
-    report(results)
+    # Always after ingest, never as a registry entry: resolution has to see
+    # every source's rows, and a registry entry would let INGESTERS order it
+    # first. Cheap and idempotent, so it runs even on a --no-ingest pass.
+    links: LinkResult | None = None
+    pops: PopularityResult | None = None
+    if not args.no_link:
+        with session() as conn:
+            links = rebuild_links(conn)
+            # Strictly after linking: the calibration anchors are the works
+            # that linking just proved two sources both carry.
+            pops = rebuild_popularity(conn)
+
+    report(results, links, pops)
     return 1 if any(r.status != "ok" for r in results) else 0
 
 

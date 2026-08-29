@@ -76,9 +76,10 @@ for what comes next.
 
 ```powershell
 uv sync                                       # install from uv.lock
-uv run pytest                                 # 229 tests, none touch the network
+uv run pytest                                 # 349 tests, none touch the network
 uv run python scripts/bootstrap.py            # init schema + run ingesters
 uv run python scripts/bootstrap.py --only anime_mal_csv --limit 100
+uv run python scripts/bootstrap.py --only anime_mal_ratings   # 19.2M ratings, ~75 s
 uv run python app.py                          # native window (--browser, --no-ui)
 ```
 
@@ -95,7 +96,26 @@ If a source forces a change anywhere else, the abstraction in `ingest/base.py`
 is wrong and should be fixed rather than worked around. `anime_mal_csv` was
 added this way and is the worked example.
 
+**Non-item data gets a sibling contract, not an `Ingester` subclass.** A ratings
+loader is not fetch → `UnifiedItem` → `upsert_items` in any of its three parts.
+`ratings_mal_csv.py` shares `IngestResult` and the `ingest_runs` row, duplicates
+the ~20-line batching loop, and satisfies the `IngestRunner` Protocol in
+`ingest/base.py` — which is what keeps `bootstrap.py` and `registry.py`
+indifferent to which kind they hold. Same three-step seam either way.
+
 ## Rules that are easy to violate
+
+- **Duplicates are collapsed on read, never merged on write.** Several sources
+  describe one work and each keeps its own row; `recsys/link.py` writes a
+  `links` row naming which represents the work, and `query_items` /
+  `count_items` show only that one. `get_item` still reaches any row by uid,
+  and `link.work_members()` returns a work's full set — Phase 3 wants the
+  union (AniList's text plus the dump's 2018 counts), not just the winner.
+
+- **The linker ranks rows by content, never by source name.** A source-preference
+  list in `link.py` or `db.py` would mean editing them to add a source, which the
+  invariant above forbids. `_richness()` prefers whichever row actually has a
+  synopsis and more tags.
 
 - **Migrations are append-only.** Add a new entry to `MIGRATIONS` in `db.py`;
   never edit a shipped one. `PRAGMA user_version` tracks what has been applied.
@@ -108,15 +128,27 @@ added this way and is the worked example.
   redirects `DATA_DIR` to a `tmp_path` and clears the `get_settings` cache.
   Keep it that way — use fixtures under `tests/fixtures/`.
 
-- **`popularity` is a within-source signal, not a cross-source one.** It is a
-  raw audience count whose scale is meaningless between sources. `mean_rating`
-  *is* comparable, because each ingester rescales it to 0–10 at ingest. There is
-  a known open issue here: `query_items` currently orders by `popularity DESC`
-  globally across sources. See `ROADMAP.md`.
+- **Never order by raw `popularity`.** It is a raw audience count whose scale
+  is meaningless between sources (MAL members 2018, MAL members 2026, AniList
+  list-adds). `recsys/popularity.py` calibrates it onto one scale by fitting a
+  monotone curve on works that two sources both carry, and stores the result in
+  `popularity_norm`; reads order by that. `mean_rating` needs none of this --
+  each ingester rescales it to 0–10 at ingest.
+
+- **Do not "fix" cross-source ranking with percentile-within-source.** It is the
+  obvious move and it is wrong: it assumes every source samples the same
+  population, so a top-25-only source has its weakest row ranked last overall.
+  `tests/test_popularity.py` pins that case.
 
 - **User input never reaches FTS5 as syntax.** Route it through
   `db.build_fts_query()`, which quotes every token, so `AND` / `*` / `NEAR`
   typed in the search box are treated as ordinary words.
+
+- **Rating uids go through the same helpers as item uids.** `make_item_uid` and
+  `make_user_uid` in `schemas.py` are the only places those formats are
+  written down. A rating points at a catalog row by uid with no foreign key, so
+  a drift between the two spellings would not error — it would just make every
+  Phase 3 join return nothing.
 
 - **`item_uid` is derived, never assigned.** It is always
   `"{domain}:{source}:{source_id}"`, computed by a pydantic validator. Two
