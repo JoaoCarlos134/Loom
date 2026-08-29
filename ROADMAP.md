@@ -13,13 +13,14 @@ desktop window and 266 tests, with the `anime` domain populated from two
 sources and a ratings matrix behind it.
 
 ```
-catalog        14,490 works      one row per work, from 27,340 stored rows
+catalog        17,787 works      two domains, from 30,640 stored rows
   anime:anilist  12,837 rows     live GraphQL: synopses + ranked tags
   anime:mal      14,478 rows     Kaggle MAL dump, static 2018 snapshot
   anime:jikan        25 rows     live API, capped by the outage below
-synopsis coverage  80.0%         was 7.3% before AniList
+manga:anilist   3,300 rows     the works those anime were adapted from
+synopsis coverage  80.0%         anime; 91% for manga
 ratings    19,172,125 ratings    106,402 users x 6,598 anime, scores 1-10
-tests             349            none touch the network or %LOCALAPPDATA%
+tests             377            none touch the network or %LOCALAPPDATA%
 ```
 
 No recommendation models yet, by design.
@@ -34,7 +35,7 @@ No recommendation models yet, by design.
 | **1** | More domains: books, movies/TV, music | one file in `ingest/` + one line in `registry.py` | next |
 | **1** | Cross-source id linking | `external_ids` — already populated | ready |
 | **1** | Synopses + rich tags + adaptation edges | `anime_anilist` ingester, joins on `idMal` | **done** |
-| **1** | Manga domain | same AniList ingester, `type: MANGA` | hard-linked cross-domain pair |
+| **1** | Manga domain | `manga_anilist.py` + one registry line | **done** |
 | **2** | Entity resolution (same work, N sources) | `links` table, migration 3, `link.py` | **done** |
 | **2** | Cross-source popularity calibration | `popularity_norm` table, migration 4, `popularity.py` | **done** |
 | **2** | Adaptation links (anime ↔ novel, film ↔ book) | `links` table — strongest bridge, no model needed | high value |
@@ -48,6 +49,73 @@ No recommendation models yet, by design.
 | **4** | Implicit signals (views, dismissals) | new `events` table via a new migration | decide explicitly |
 | **4** | Similarity graph view | `/api/similar/…` + canvas renderer, reads the model's k-NN | — |
 | **4** | Region-aware availability | `REGION` setting — already threaded through | — |
+
+---
+
+## Done: manga, the second domain
+
+The first thing to actually test the architecture's one claim. Five domains were
+declared and one was populated, so "adding a domain is one file plus one registry
+line" had never been checked. It is now, and it held -- with one caveat.
+
+```
+3,300 manga fetched in 2.1 min       synopsis 91%, avg 7.5 tags, creators 99%
+catalog 17,787 works                 anime 14,490 + manga 3,297
+```
+
+**What it fetches is the interesting part.** Not AniList's manga catalogue: the
+ids come from the relation edges already sitting in the anime rows' `raw_json`,
+following `ADAPTATION` and `SOURCE` only. Those are the manga and light novels
+our anime were adapted from. The edges were kept during the anime ingest so that
+mining them later would cost no further requests, and it did not.
+
+That makes this a cross-domain pair with **hard links rather than inferred
+similarity**. Everywhere else the bridge has to guess that a book resembles an
+anime from shared tags and text; here the two are the same story and AniList
+says so. It is the reference case for judging the content bridge: a model that
+cannot connect an anime to the manga it was literally adapted from is not going
+to connect it to an unrelated novel either.
+
+### The invariant held, but only after fixing the abstraction
+
+Adding manga was one new file and one registry line -- and no new settings, since
+it reuses the AniList ones. But it was not that at first: the GraphQL client, the
+retry loop and the cache were welded into `anime_anilist.py`. Rather than copy
+250 lines, the shared machinery moved to `anilist.py` and both domains became
+thin subclasses differing in three things: the domain, the `type:`, and where
+the ids come from. That is what the invariant asks for when a source cannot
+plug in cleanly -- fix the abstraction, do not work around it.
+
+The one genuine schema change was widening the `Domain` literal in `schemas.py`,
+which that file's docstring already named as the sanctioned exception.
+
+### Three bugs this turned up
+
+- **`json_each` exposes its own `id` column.** `GROUP BY id` in the adaptation
+  query bound to the JSON array index rather than the manga id, silently
+  collapsing distinct manga together. Caught by a test, not by inspection.
+  Renamed to `manga_id`.
+- **Staff arrive in no useful order.** 7% of manga listed an assistant or a
+  translator as their first creator -- including one ahead of Hajime Isayama on
+  *Shingeki no Kyojin*. Credits are now ranked, story and art first.
+- **Translators are not creators.** AniList lists them per language, ~1,150
+  across this catalogue. Left in, "same person" would have bridged two unrelated
+  manga because they share a Spanish translator. Edition credits -- translation,
+  lettering, editing, typesetting -- are now excluded; both numbers are 0% and 0
+  after the fix.
+
+And one trap fixed while it was still cheap: the response cache was keyed by URL
+and id batch but **not by the query**, so adding `staff` to the shared query
+would have returned cached payloads silently missing it for 30 days. The key now
+carries a query fingerprint.
+
+### Known gap
+
+The anime rows predate `staff` being requested, so they carry studios but no
+`Original Creator` -- which is the person-level bridge to manga in its purest
+form, naming the author whose work a series adapts. The cache fingerprint means
+the next `anime_anilist` run refetches and picks it up; that is ~10 minutes and
+has not been done yet.
 
 ---
 

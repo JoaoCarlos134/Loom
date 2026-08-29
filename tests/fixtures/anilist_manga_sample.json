@@ -1,0 +1,589 @@
+[
+ {
+  "id": 31248,
+  "idMal": 1248,
+  "siteUrl": "https://anilist.co/manga/31248",
+  "format": "MANGA",
+  "seasonYear": null,
+  "popularity": 947,
+  "averageScore": 66,
+  "startDate": {
+   "year": 2000
+  },
+  "title": {
+   "romaji": "Shin Shirayuki-hime Densetsu Pretear",
+   "english": "Prétear: The New Legend of Snow White",
+   "native": "新白雪姫伝説プリーティア"
+  },
+  "synonyms": [],
+  "description": "Himeno Awayuki is a high school student who's having trouble adjusting to her new lifestyle. Her mother past away when she was a child, and her father Kaoru married the richest woman in town, Natuse. Kaoru always seems to take Natuse's side, and Natuse's two daughters aren't too fond of Himeno. Himeno's new life changes when she takes a shortcut to school and runs into a young boy, who takes her to a magical world on the brink of extinction. This world needs the help of a magical princess called the Pretear, who happens to be Himeno herself.",
+  "genres": [
+   "Drama",
+   "Fantasy",
+   "Romance"
+  ],
+  "tags": [
+   {
+    "name": "Shoujo",
+    "rank": 79,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Heterosexual",
+    "rank": 79,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Love Triangle",
+    "rank": 79,
+    "isMediaSpoiler": true
+   },
+   {
+    "name": "Tragedy",
+    "rank": 79,
+    "isMediaSpoiler": true
+   },
+   {
+    "name": "Fairy Tale",
+    "rank": 79,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Magic",
+    "rank": 79,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Henshin",
+    "rank": 79,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Male Harem",
+    "rank": 79,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Female Protagonist",
+    "rank": 79,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Tsundere",
+    "rank": 70,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Maids",
+    "rank": 70,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Ojou-sama",
+    "rank": 60,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Swordplay",
+    "rank": 60,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Family Life",
+    "rank": 60,
+    "isMediaSpoiler": false
+   }
+  ],
+  "studios": {
+   "edges": []
+  },
+  "staff": {
+   "edges": [
+    {
+     "role": "Art",
+     "node": {
+      "name": {
+       "full": "Kaori Naruse"
+      }
+     }
+    },
+    {
+     "role": "Story",
+     "node": {
+      "name": {
+       "full": "Junichi Satou"
+      }
+     }
+    }
+   ]
+  },
+  "coverImage": {
+   "large": "https://s4.anilist.co/file/anilistcdn/media/manga/cover/medium/b31248-Kf9kbfwXrOJX.jpg"
+  },
+  "stats": {
+   "scoreDistribution": [
+    {
+     "score": 10,
+     "amount": 2
+    },
+    {
+     "score": 20,
+     "amount": 2
+    },
+    {
+     "score": 30,
+     "amount": 7
+    },
+    {
+     "score": 40,
+     "amount": 5
+    },
+    {
+     "score": 50,
+     "amount": 33
+    },
+    {
+     "score": 60,
+     "amount": 42
+    },
+    {
+     "score": 70,
+     "amount": 70
+    },
+    {
+     "score": 80,
+     "amount": 54
+    },
+    {
+     "score": 90,
+     "amount": 45
+    },
+    {
+     "score": 100,
+     "amount": 20
+    }
+   ]
+  },
+  "relations": {
+   "edges": [
+    {
+     "relationType": "ADAPTATION",
+     "node": {
+      "id": 100,
+      "idMal": 100,
+      "type": "ANIME",
+      "format": "TV",
+      "title": {
+       "romaji": "Shin Shirayuki-hime Densetsu Pretear"
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "id": 33317,
+  "idMal": 3317,
+  "siteUrl": "https://anilist.co/manga/33317",
+  "format": "MANGA",
+  "seasonYear": null,
+  "popularity": 3627,
+  "averageScore": 62,
+  "startDate": {
+   "year": 2006
+  },
+  "title": {
+   "romaji": "Seikon no Qwaser",
+   "english": "The Qwaser of Stigmata",
+   "native": "聖痕のクェイサー"
+  },
+  "synonyms": [
+   "Seikon no Quaser",
+   "Seikon no Kueisa",
+   "Seikon no Quasar"
+  ],
+  "description": "The St. Mikhailov Academy student Oribe Mafuyu comes across a mysterious silver haired boy. He is called a Qwaser, a being that draws power from Soma and is able to manipulate a specific element. And now, in the 21st century, the mystery revolving around an Icon turns the academy into the battlegrounds for the fight between the Qwaser!\n",
+  "genres": [
+   "Action",
+   "Adventure",
+   "Ecchi",
+   "Supernatural"
+  ],
+  "tags": [
+   {
+    "name": "Female Harem",
+    "rank": 79,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Nudity",
+    "rank": 75,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Nun",
+    "rank": 75,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Super Power",
+    "rank": 73,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Large Breasts",
+    "rank": 73,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Male Protagonist",
+    "rank": 60,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Shounen",
+    "rank": 60,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "School",
+    "rank": 60,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Femboy",
+    "rank": 50,
+    "isMediaSpoiler": false
+   }
+  ],
+  "studios": {
+   "edges": []
+  },
+  "staff": {
+   "edges": [
+    {
+     "role": "Art",
+     "node": {
+      "name": {
+       "full": "Kenetsu Satou"
+      }
+     }
+    },
+    {
+     "role": "Story",
+     "node": {
+      "name": {
+       "full": "Hiroyuki Yoshino"
+      }
+     }
+    }
+   ]
+  },
+  "coverImage": {
+   "large": "https://s4.anilist.co/file/anilistcdn/media/manga/cover/medium/bx33317-7rc4weg3zj3z.jpg"
+  },
+  "stats": {
+   "scoreDistribution": [
+    {
+     "score": 10,
+     "amount": 26
+    },
+    {
+     "score": 20,
+     "amount": 25
+    },
+    {
+     "score": 30,
+     "amount": 24
+    },
+    {
+     "score": 40,
+     "amount": 46
+    },
+    {
+     "score": 50,
+     "amount": 69
+    },
+    {
+     "score": 60,
+     "amount": 105
+    },
+    {
+     "score": 70,
+     "amount": 148
+    },
+    {
+     "score": 80,
+     "amount": 111
+    },
+    {
+     "score": 90,
+     "amount": 84
+    },
+    {
+     "score": 100,
+     "amount": 40
+    }
+   ]
+  },
+  "relations": {
+   "edges": [
+    {
+     "relationType": "ADAPTATION",
+     "node": {
+      "id": 9202,
+      "idMal": 9202,
+      "type": "ANIME",
+      "format": "OVA",
+      "title": {
+       "romaji": "Seikon no Qwaser: Jotei no Shouzou"
+      }
+     }
+    },
+    {
+     "relationType": "ADAPTATION",
+     "node": {
+      "id": 6500,
+      "idMal": 6500,
+      "type": "ANIME",
+      "format": "TV",
+      "title": {
+       "romaji": "Seikon no Qwaser"
+      }
+     }
+    },
+    {
+     "relationType": "ADAPTATION",
+     "node": {
+      "id": 10073,
+      "idMal": 10073,
+      "type": "ANIME",
+      "format": "TV",
+      "title": {
+       "romaji": "Seikon no Qwaser II"
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "id": 86762,
+  "idMal": 90561,
+  "siteUrl": "https://anilist.co/manga/86762",
+  "format": "NOVEL",
+  "seasonYear": null,
+  "popularity": 2191,
+  "averageScore": 72,
+  "startDate": {
+   "year": 2015
+  },
+  "title": {
+   "romaji": "Kenja no Mago",
+   "english": null,
+   "native": "賢者の孫"
+  },
+  "synonyms": [
+   "Philosopher's Grandson",
+   "Magi's Grandson",
+   "หลานจอมปราชญ์",
+   "Wise Man's Grandchild"
+  ],
+  "description": "A young man who had surely died in an accident, was reborn in another world as a baby! After that, he was picked up by the patriot hero \"Sage\" Merlin Wolford and was given the name Shin. He was raised as a grandson by Merlin and soaked up Merlin's teachings earning him some shocking power however, when he became 15 his grandfather Merlin said: \"I forgot to teach him common sense\"!<br>\n<br>\nAn \"abnormal\" boy's unconventional other world fantasy life starts here!!",
+  "genres": [
+   "Action",
+   "Comedy",
+   "Ecchi",
+   "Fantasy",
+   "Supernatural"
+  ],
+  "tags": [
+   {
+    "name": "Isekai",
+    "rank": 80,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Medieval",
+    "rank": 79,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Male Protagonist",
+    "rank": 79,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "School",
+    "rank": 60,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Magic",
+    "rank": 40,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Reincarnation",
+    "rank": 40,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "School Club",
+    "rank": 20,
+    "isMediaSpoiler": false
+   },
+   {
+    "name": "Demons",
+    "rank": 20,
+    "isMediaSpoiler": false
+   }
+  ],
+  "studios": {
+   "edges": []
+  },
+  "staff": {
+   "edges": [
+    {
+     "role": "Illustration",
+     "node": {
+      "name": {
+       "full": "Seiji Kikuchi"
+      }
+     }
+    },
+    {
+     "role": "Story",
+     "node": {
+      "name": {
+       "full": "Tsuyoshi Yoshioka"
+      }
+     }
+    }
+   ]
+  },
+  "coverImage": {
+   "large": "https://s4.anilist.co/file/anilistcdn/media/manga/cover/medium/56762-IgJptNhMC0xX.jpg"
+  },
+  "stats": {
+   "scoreDistribution": [
+    {
+     "score": 10,
+     "amount": 4
+    },
+    {
+     "score": 20,
+     "amount": 4
+    },
+    {
+     "score": 30,
+     "amount": 7
+    },
+    {
+     "score": 40,
+     "amount": 13
+    },
+    {
+     "score": 50,
+     "amount": 24
+    },
+    {
+     "score": 60,
+     "amount": 42
+    },
+    {
+     "score": 70,
+     "amount": 70
+    },
+    {
+     "score": 80,
+     "amount": 71
+    },
+    {
+     "score": 90,
+     "amount": 85
+    },
+    {
+     "score": 100,
+     "amount": 74
+    }
+   ]
+  },
+  "relations": {
+   "edges": [
+    {
+     "relationType": "ADAPTATION",
+     "node": {
+      "id": 100112,
+      "idMal": 36407,
+      "type": "ANIME",
+      "format": "TV",
+      "title": {
+       "romaji": "Kenja no Mago"
+      }
+     }
+    },
+    {
+     "relationType": "ADAPTATION",
+     "node": {
+      "id": 87293,
+      "idMal": 99377,
+      "type": "MANGA",
+      "format": "MANGA",
+      "title": {
+       "romaji": "Kenja no Mago"
+      }
+     }
+    },
+    {
+     "relationType": "SPIN_OFF",
+     "node": {
+      "id": 110220,
+      "idMal": null,
+      "type": "MANGA",
+      "format": "NOVEL",
+      "title": {
+       "romaji": "Kenja no Mago SP: Oujo-sama Funtouki"
+      }
+     }
+    },
+    {
+     "relationType": "SIDE_STORY",
+     "node": {
+      "id": 121390,
+      "idMal": 128496,
+      "type": "MANGA",
+      "format": "MANGA",
+      "title": {
+       "romaji": "Kenja no Mago SS"
+      }
+     }
+    },
+    {
+     "relationType": "PREQUEL",
+     "node": {
+      "id": 125020,
+      "idMal": 140482,
+      "type": "MANGA",
+      "format": "NOVEL",
+      "title": {
+       "romaji": "Kenja no Mago: Extra Story"
+      }
+     }
+    },
+    {
+     "relationType": "SPIN_OFF",
+     "node": {
+      "id": 157050,
+      "idMal": null,
+      "type": "MANGA",
+      "format": "NOVEL",
+      "title": {
+       "romaji": "Maou no Atotsugi"
+      }
+     }
+    }
+   ]
+  }
+ }
+]

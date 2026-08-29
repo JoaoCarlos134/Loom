@@ -1,6 +1,6 @@
 # Loom
 
-Cross-domain hybrid recommender system (anime / books / music / movies / TV) that runs
+Cross-domain hybrid recommender system (anime / manga / books / music / movies / TV) that runs
 as a local desktop app. No server, no cloud, no admin rights.
 
 **Status: Phase 3 started** — project skeleton plus one domain (anime) ingested end
@@ -66,7 +66,8 @@ Two sources feed the `anime` domain:
 |---|---|---|---|
 | `anime_mal_csv` | Kaggle MAL dump, static | ~14,478 items | ~2 GB download once, then ~2 s |
 | `anime_jikan` | Jikan v4, live API | up to 2000 items | 3 req/sec limiter |
-| `anime_anilist` | AniList GraphQL, live | ~14.5k items | ~10 min, 30 req/min, no API key |
+| `anime_anilist` | AniList GraphQL, live | ~12.8k items | ~10 min, 30 req/min, no API key |
+| `manga_anilist` | AniList GraphQL, live | ~3.3k items | ~2 min; a second domain |
 | `anime_mal_ratings` | same Kaggle archive | 19.2M ratings | ~75 s, grows the DB to ~1.3 GB |
 
 `anime_mal_ratings` is **not** in the default `INGESTERS` list. It is a one-off
@@ -184,7 +185,9 @@ src/recsys/ingest/
   kaggle.py               locate a file in a Kaggle dataset, download if absent
   anime_jikan.py          Jikan v4 → UnifiedItem
   anime_mal_csv.py        Kaggle MAL CSV dump → UnifiedItem
-  anime_anilist.py        AniList GraphQL → UnifiedItem (the source with text)
+  anilist.py              shared AniList client + mapper, used by both domains
+  anime_anilist.py        AniList ANIME → UnifiedItem (the source with text)
+  manga_anilist.py        AniList MANGA → UnifiedItem, via adaptation edges
   ratings_mal_csv.py      Kaggle MAL user lists → ratings rows (a sibling
                           contract, not an Ingester — see below)
 ```

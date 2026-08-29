@@ -30,6 +30,12 @@ def _anilist() -> type[IngestRunner]:
     return AniListAnimeIngester
 
 
+def _manga_anilist() -> type[IngestRunner]:
+    from recsys.ingest.manga_anilist import AniListMangaIngester
+
+    return AniListMangaIngester
+
+
 def _mal_ratings() -> type[IngestRunner]:
     from recsys.ingest.ratings_mal_csv import MalRatingsLoader
 
@@ -42,6 +48,7 @@ REGISTRY: dict[str, Callable[[], type[IngestRunner]]] = {
     "anime_jikan": _jikan,
     "anime_mal_csv": _mal_csv,
     "anime_anilist": _anilist,
+    "manga_anilist": _manga_anilist,
     "anime_mal_ratings": _mal_ratings,
     # Phase 1: "books_openlibrary": _openlibrary,
     # Phase 1: "movies_tmdb":       _tmdb,

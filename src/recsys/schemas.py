@@ -13,9 +13,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-Domain = Literal["anime", "book", "music", "movie", "tv"]
+Domain = Literal["anime", "manga", "book", "music", "movie", "tv"]
 
-DOMAINS: tuple[str, ...] = ("anime", "book", "music", "movie", "tv")
+DOMAINS: tuple[str, ...] = ("anime", "manga", "book", "music", "movie", "tv")
 
 
 def utcnow() -> datetime:
