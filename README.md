@@ -171,19 +171,24 @@ stays **on** — we are not disabling certificate checks.
 app.py                    pywebview window  ──┐
                                               │ http://127.0.0.1:<free port>
 src/recsys/api/server.py  FastAPI  ───────────┘
-              routes.py   /api/health /api/items /api/items/{uid} /api/stats
+              routes.py   /api/health /api/items /api/items/{uid}
+                          /api/similar/{uid} /api/stats
               ui/         plain HTML + CSS + vanilla JS, served as static files
 
 src/recsys/db.py          SQLite: items + items_fts (FTS5) + ratings + links
-                                  + popularity_norm + ingest_runs
+                                  + popularity_norm + works + relations
+                                  + ingest_runs
            link.py        entity resolution: which rows are one work
            popularity.py  one popularity scale across sources
+           works.py       the read view: one row per work, sort key on the row
+           relations.py   adaptation and franchise edges, out of raw_json
            prune.py       drop rows the ingest filters would reject
 
 src/recsys/models/       reads the catalog, writes derived artifacts
               text.py    documents -> embedding matrix (parquet)
               similarity.py  brute-force nearest neighbours
               evaluate.py    recall against known adaptation links
+              collaborative.py  item-item CF over 19.2M ratings (parquet)
            schemas.py     UnifiedItem — the one row shape all domains collapse into
            config.py      pydantic-settings, the only reader of the environment
 

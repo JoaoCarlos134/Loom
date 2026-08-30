@@ -87,6 +87,8 @@ uv run python scripts/bootstrap.py --only music_musicbrainz    # composers, 1 re
 uv run python scripts/bootstrap.py --no-ingest --prune-dry-run # what filters reject
 uv run python scripts/embed.py                # build the embedding matrix, ~2.5 h
 uv run python scripts/embed.py --evaluate     # score it against adaptation links
+uv run python scripts/cf.py                   # item-item CF from 19.2M ratings, ~2 min
+uv run python scripts/cf.py --evaluate        # held-out recall vs a popularity baseline
 uv run python app.py                          # native window (--browser, --no-ui)
 ```
 
@@ -159,7 +161,8 @@ indifferent to which kind they hold. Same three-step seam either way.
   `link.py` hides duplicates without touching them and `popularity.py` writes a
   second opinion beside the source datum. Pruning never runs as part of a normal
   bootstrap, defaults to a dry run, and reports before it acts. After it runs,
-  `links` and `popularity_norm` must be rebuilt -- they point at deleted rows.
+  every derived table -- `links`, `popularity_norm`, `works`, `relations` --
+  must be rebuilt; they point at deleted rows.
 
 - **A paginated sweep is incomplete until it is partitioned.** AniList refuses
   to page past 5,000 entries into any listing and TMDB stops at 500 pages, in
@@ -172,6 +175,30 @@ indifferent to which kind they hold. Same three-step seam either way.
   `DiskCache` writes the string it is keyed on into every envelope -- so
   `TmdbIngester._cache_key` strips it. Never put a real credential in
   `.env.example`, a docstring, a log line, or a test.
+
+- **Reads go through `works`, which is a cache and must degrade.** Listings
+  order by the calibrated popularity, and that value lives in `popularity_norm`
+  -- a *joined* table, so no index on `items` could ever satisfy the ORDER BY
+  and every page scanned the catalog and sorted it in a temp b-tree (267 ms).
+  `works.py` stores one row per work with the sort key on it; reads are 5.6 ms.
+  It is rebuilt strictly after `link.py` and `popularity.py`, in that order,
+  because it stores what both decided. When it is empty `db.py` falls back to
+  the live joins -- a catalog that has never been linked must still list, and
+  an empty shelf on a populated database is the worst way for a cache to fail.
+
+- **`relations` is not `links`.** `links` means "these rows are the same work".
+  An adaptation or a sequel is the opposite claim -- two different works, one
+  story -- so the AniList relation edges get their own table. Never collapse
+  them onto `links`, and never assume an edge's far side is in the catalog.
+
+- **Ratings and listings use different uids; translate, never assume.** Every
+  rating names `anime:mal:{id}`, but only 451 of the 6,598 rated rows *represent*
+  their work -- the other 6,147 lost the primary election to an AniList row with
+  a synopsis, so they are exactly the uids `query_items` never returns and the
+  embedding matrix does not hold. `models/collaborative.py` stores its artifact
+  in rating space and translates at read time through `links`; that translation
+  lives in `CollaborativeIndex.similar_to` and nowhere else. Getting it wrong
+  returns an empty list and raises nothing.
 
 - **Migrations are append-only.** Add a new entry to `MIGRATIONS` in `db.py`;
   never edit a shipped one. `PRAGMA user_version` tracks what has been applied.

@@ -38,6 +38,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from recsys.log import get_logger
+from recsys.relations import ADAPTATION_RELATIONS
 
 log = get_logger(__name__)
 
@@ -82,38 +83,29 @@ class RecallResult:
 def adaptation_pairs(conn: sqlite3.Connection) -> list[tuple[str, str]]:
     """(anime item_uid, manga item_uid) for adaptations both sides of which we hold.
 
-    Only pairs where the anime row is the one representing its work, since that
-    is the row the embedding matrix carries.
+    Only pairs where *both* rows are the ones representing their works, since
+    those are the rows the embedding matrix carries.
+
+    Reads ``recsys.relations``, which has to have been rebuilt: the edges live
+    in AniList rows' ``raw_json`` and walking that column to find them cost
+    ~229 ms a call against a table where they are an index read.
     """
+    marks = ",".join("?" * len(ADAPTATION_RELATIONS))
     rows = conn.execute(
-        """SELECT a.item_uid AS anime_uid,
-                  CAST(json_extract(e.value, '$.node.id') AS INTEGER) AS manga_id
-           FROM items a
-           LEFT JOIN links la ON la.item_uid = a.item_uid,
-                json_each(json_extract(a.raw_json, '$.relations.edges')) e
-           WHERE a.domain = 'anime' AND a.source = 'anilist'
-             AND (la.item_uid IS NULL OR la.is_primary = 1)
-             AND json_extract(e.value, '$.node.type') = 'MANGA'
-             AND json_extract(e.value, '$.relationType') IN ('ADAPTATION', 'SOURCE')"""
+        f"""SELECT r.src_item_uid AS anime_uid, r.dst_item_uid AS manga_uid
+              FROM relations r
+              JOIN items a ON a.item_uid = r.src_item_uid
+              JOIN items m ON m.item_uid = r.dst_item_uid
+              LEFT JOIN links la ON la.item_uid = a.item_uid
+              LEFT JOIN links lm ON lm.item_uid = m.item_uid
+             WHERE r.relation IN ({marks})
+               AND a.domain = 'anime' AND m.domain = 'manga'
+               AND (la.item_uid IS NULL OR la.is_primary = 1)
+               AND (lm.item_uid IS NULL OR lm.is_primary = 1)
+             ORDER BY r.src_item_uid, r.dst_item_uid""",
+        sorted(ADAPTATION_RELATIONS),
     ).fetchall()
-
-    # Map AniList manga ids to whichever row represents that manga work.
-    manga = {}
-    for row in conn.execute(
-        """SELECT m.source_id, m.item_uid
-           FROM items m
-           LEFT JOIN links lm ON lm.item_uid = m.item_uid
-           WHERE m.domain = 'manga' AND m.source = 'anilist'
-             AND (lm.item_uid IS NULL OR lm.is_primary = 1)"""
-    ):
-        manga[str(row["source_id"])] = row["item_uid"]
-
-    pairs = []
-    for row in rows:
-        target = manga.get(str(row["manga_id"]))
-        if target:
-            pairs.append((row["anime_uid"], target))
-    return pairs
+    return [(r["anime_uid"], r["manga_uid"]) for r in rows]
 
 
 def adaptation_recall(

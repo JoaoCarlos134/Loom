@@ -132,12 +132,68 @@ CREATE TABLE popularity_norm (
 ) WITHOUT ROWID;
 """
 
+# `works` is a read cache, not a new source of truth: one row per work, with the
+# ordering key stored *on the row*. Reads used to order by
+# `COALESCE(popularity_norm.value, items.popularity)`, and because that key
+# lives in a joined table no index on `items` could ever satisfy the sort -- so
+# every page of the catalog scanned all rows and sorted them in a temp b-tree.
+# Measured on the 84k-work catalog: the first page cost 267 ms, 213 ms of it
+# the sort alone, and 5.5 ms through this table -- of which the page query is
+# 0.48 ms and the rest is the COUNT and building 50 pydantic models. Rebuilt by
+# `recsys.works`, strictly after `links` and `popularity_norm`, which it is
+# derived from.
+#
+# `relations` promotes the relation edges already sitting in AniList rows'
+# `raw_json` into something joinable. They are *not* `links`: `links` means
+# "these rows are the same work", and an adaptation or a sequel is a different
+# work. Reading them meant a `json_each` walk of a 631 MB column (1.2 s for all
+# 57,480 edges); they carry both the adaptation bridge between domains and the
+# franchise edges a recommender needs in order to stop suggesting a work's own
+# sequels back to it.
+#
+# `idx_items_domain` is dropped as redundant: it is a strict left prefix of
+# `idx_items_domain_pop`, so every query it served that index serves too.
+MIGRATION_5 = """
+CREATE TABLE works (
+    item_uid TEXT PRIMARY KEY,
+    domain   TEXT NOT NULL,
+    title    TEXT NOT NULL,
+    sort_key REAL
+) WITHOUT ROWID;
+
+CREATE INDEX idx_works_sort        ON works(sort_key DESC, title ASC);
+CREATE INDEX idx_works_domain_sort ON works(domain, sort_key DESC, title ASC);
+
+CREATE TABLE relations (
+    src_item_uid TEXT NOT NULL,
+    dst_item_uid TEXT NOT NULL,
+    relation     TEXT NOT NULL,
+    PRIMARY KEY (src_item_uid, dst_item_uid, relation)
+) WITHOUT ROWID;
+
+CREATE INDEX idx_relations_dst ON relations(dst_item_uid);
+
+DROP INDEX idx_items_domain;
+"""
+
+# `relations`' primary key leads with `src_item_uid`, so a query selecting *by
+# relation type* -- which is what the adaptation bridge asks for -- could not
+# use it. Without this the planner drove the join from all 30,875 anime rows
+# rather than from the 16,524 adaptation edges; with it, `adaptation_pairs`
+# went 200 ms -> 89 ms (against 229 ms for the json_each walk it replaced).
+# A separate migration rather than an edit to 5, because 5 has been applied.
+MIGRATION_6 = """
+CREATE INDEX idx_relations_relation ON relations(relation, src_item_uid);
+"""
+
 # Append new migrations here; never modify an existing entry.
 MIGRATIONS: list[tuple[int, str]] = [
     (1, MIGRATION_1),
     (2, MIGRATION_2),
     (3, MIGRATION_3),
     (4, MIGRATION_4),
+    (5, MIGRATION_5),
+    (6, MIGRATION_6),
 ]
 
 SCHEMA_VERSION = MIGRATIONS[-1][0]
@@ -340,6 +396,19 @@ _PRIMARY_ONLY = "(l.item_uid IS NULL OR l.is_primary = 1)"
 _POP_JOIN = "LEFT JOIN popularity_norm pn ON pn.item_uid = i.item_uid"
 _POP_ORDER = "COALESCE(pn.value, i.popularity)"
 
+# `recsys.works` precomputes both of the above onto one row per work, which is
+# what lets an index satisfy the ORDER BY instead of a temp b-tree. It is a
+# cache, so reads fall back to the joins above when it has not been built --
+# a fresh catalog, or a `--no-link` bootstrap, still lists its items rather
+# than showing an empty shelf. Same contract as `links` and `popularity_norm`:
+# rebuilt in bulk, never maintained incrementally, and stale until it is.
+_WORKS_JOIN = "JOIN works w ON w.item_uid = i.item_uid"
+_WORKS_ORDER = "w.sort_key"
+
+
+def _works_built(conn: sqlite3.Connection) -> bool:
+    return conn.execute("SELECT EXISTS(SELECT 1 FROM works)").fetchone()[0] == 1
+
 
 def build_fts_query(q: str) -> str | None:
     """Turn free user text into a safe FTS5 MATCH expression.
@@ -379,9 +448,19 @@ def query_items(
     params: list[Any] = []
     where: list[str] = []
 
-    if domain:
-        where.append("i.domain = ?")
-    where.append(_PRIMARY_ONLY)  # no placeholder, so param order is unaffected
+    fast = _works_built(conn)
+    if fast:
+        # `works` already holds one row per work, so the primary-only predicate
+        # is the join itself and the domain filter goes through the same index
+        # as the ordering.
+        joins, sort = _WORKS_JOIN, _WORKS_ORDER
+        if domain:
+            where.append("w.domain = ?")
+    else:
+        joins, sort = f"{_PRIMARY_JOIN} {_POP_JOIN}", _POP_ORDER
+        if domain:
+            where.append("i.domain = ?")
+        where.append(_PRIMARY_ONLY)  # no placeholder, so param order is unaffected
 
     match = build_fts_query(q) if q else None
     if q and match is None:
@@ -391,21 +470,27 @@ def query_items(
     if match:
         base = (
             "FROM items_fts f JOIN items i ON i.rowid = f.rowid "
-            f"{_PRIMARY_JOIN} {_POP_JOIN} WHERE items_fts MATCH ?"
+            f"{joins} WHERE items_fts MATCH ?"
         )
         params.append(match)
         if domain:
             params.append(domain)
         tail = " AND " + " AND ".join(where) if where else ""
-        order = f"ORDER BY bm25(items_fts, 10.0, 4.0, 1.0), {_POP_ORDER} DESC"
+        order = f"ORDER BY bm25(items_fts, 10.0, 4.0, 1.0), {sort} DESC"
+        count_base = base
     else:
-        base = f"FROM items i {_PRIMARY_JOIN} {_POP_JOIN}"
+        base = f"FROM items i {joins}"
         if domain:
             params.append(domain)
         tail = " WHERE " + " AND ".join(where) if where else ""
-        order = f"ORDER BY {_POP_ORDER} DESC, i.title ASC"
+        order = f"ORDER BY {sort} DESC, i.title ASC"
+        # Counted straight off `works`, without touching `items` at all. The
+        # page needs the item columns; the count needs one row per work, which
+        # is what `works` *is* -- joining back to `items` to count them cost
+        # 60 ms of the 62, an index probe per work to learn nothing.
+        count_base = "FROM works w" if fast else base
 
-    total = conn.execute(f"SELECT COUNT(*) {base}{tail}", params).fetchone()[0]
+    total = conn.execute(f"SELECT COUNT(*) {count_base}{tail}", params).fetchone()[0]
     rows = conn.execute(
         f"SELECT {_SELECT_COLS} {base}{tail} {order} LIMIT ? OFFSET ?",
         [*params, limit, offset],
@@ -480,6 +565,8 @@ def get_item(conn: sqlite3.Connection, item_uid: str) -> UnifiedItem | None:
 
 def count_items(conn: sqlite3.Connection) -> int:
     """Works, not rows -- what a reader of the catalog actually sees."""
+    if _works_built(conn):
+        return int(conn.execute("SELECT COUNT(*) FROM works").fetchone()[0])
     return int(
         conn.execute(
             f"SELECT COUNT(*) FROM items i {_PRIMARY_JOIN} WHERE {_PRIMARY_ONLY}"
@@ -496,13 +583,30 @@ def domain_stats(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     # n_items counts works; sources counts every source that contributed a row,
     # including ones whose rows all lost the primary election. A source that
     # supplied data is a source of the catalog whether or not it is displayed.
-    rows = conn.execute(
-        f"""SELECT domain,
-                  SUM(CASE WHEN {_PRIMARY_ONLY} THEN 1 ELSE 0 END) AS n_items,
-                  json_group_array(DISTINCT source) AS sources
-           FROM items i {_PRIMARY_JOIN}
-           GROUP BY domain ORDER BY n_items DESC"""
-    ).fetchall()
+    if _works_built(conn):
+        counted = {
+            r["domain"]: r["n_items"]
+            for r in conn.execute(
+                "SELECT domain, COUNT(*) AS n_items FROM works GROUP BY domain"
+            )
+        }
+        rows = [
+            {"domain": r["domain"], "n_items": counted.get(r["domain"], 0),
+             "sources": r["sources"]}
+            for r in conn.execute(
+                """SELECT domain, json_group_array(DISTINCT source) AS sources
+                   FROM items GROUP BY domain"""
+            )
+        ]
+        rows.sort(key=lambda r: (-r["n_items"], r["domain"]))
+    else:
+        rows = conn.execute(
+            f"""SELECT domain,
+                      SUM(CASE WHEN {_PRIMARY_ONLY} THEN 1 ELSE 0 END) AS n_items,
+                      json_group_array(DISTINCT source) AS sources
+               FROM items i {_PRIMARY_JOIN}
+               GROUP BY domain ORDER BY n_items DESC"""
+        ).fetchall()
     last = {
         r["domain"]: r["finished_at"]
         for r in conn.execute(

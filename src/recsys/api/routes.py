@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import sqlite3
+from functools import lru_cache
+from pathlib import Path
 from typing import Annotated, Iterator
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -16,9 +18,45 @@ from recsys.db import (
     last_ingest_at,
     query_items,
 )
-from recsys.schemas import DOMAINS, Health, ItemsPage, Stats, UnifiedItem
+from recsys.relations import FRANCHISE_RELATIONS, related_uids
+from recsys.schemas import (
+    DOMAINS,
+    Health,
+    ItemsPage,
+    SimilarItem,
+    SimilarPage,
+    Stats,
+    UnifiedItem,
+)
 
 router = APIRouter(prefix="/api", tags=["catalog"])
+
+
+@lru_cache(maxsize=1)
+def _similarity_index(path: Path):
+    """The embedding matrix, loaded once per process and held.
+
+    129 MB resident and 0.18 s to read, against 5 ms for a query -- so it is
+    loaded lazily on the first request that needs it rather than at startup,
+    which keeps a catalog-only session from paying for a model it never asks
+    about. Cached on the path, so a test pointing at another DATA_DIR gets its
+    own. ``None`` when the matrix has not been built yet.
+    """
+    if not Path(path).is_file():
+        return None
+    from recsys.models.similarity import SimilarityIndex
+
+    return SimilarityIndex.load(Path(path))
+
+
+@lru_cache(maxsize=1)
+def _collaborative_index(path: Path):
+    """The item-item neighbour table, loaded once per process. ``None`` if unbuilt."""
+    if not Path(path).is_file():
+        return None
+    from recsys.models.collaborative import CollaborativeIndex
+
+    return CollaborativeIndex.load(Path(path))
 
 
 def db_conn() -> Iterator[sqlite3.Connection]:
@@ -75,6 +113,104 @@ def read_item(item_uid: str, conn: Conn) -> UnifiedItem:
     if item is None:
         raise HTTPException(404, f"no item with uid {item_uid!r}")
     return item
+
+
+@router.get("/similar/{item_uid:path}", response_model=SimilarPage)
+def similar(
+    item_uid: str,
+    conn: Conn,
+    cfg: Cfg,
+    domain: str | None = Query(None, description="Restrict neighbours to one domain"),
+    k: int = Query(10, ge=1, le=50),
+    same_franchise: bool = Query(
+        False, description="Include a work's own sequels, prequels and side stories"
+    ),
+    method: str = Query(
+        "content", description="'content' (text embeddings) or 'cf' (who liked what)"
+    ),
+) -> SimilarPage:
+    """The k works most like this one, optionally in another domain.
+
+    Asking for the films nearest an anime is what makes Loom cross-domain
+    rather than a related-items widget, and it is the only route that reads a
+    model rather than the catalog.
+
+    Two models answer it and they fail differently. ``content`` compares what
+    works are *about* and will happily return something nobody enjoyed;
+    ``cf`` compares who rated what and has never heard of a work nobody rated,
+    nor of any domain but anime, because that is all the ratings corpus covers.
+    """
+    if method not in ("content", "cf"):
+        raise HTTPException(422, f"unknown method {method!r}; expected 'content' or 'cf'")
+    if domain is not None:
+        domain = domain.strip().lower()
+        if domain in ("", "all"):
+            domain = None
+        elif domain not in DOMAINS:
+            raise HTTPException(422, f"unknown domain {domain!r}; expected one of {list(DOMAINS)}")
+
+    if get_item(conn, item_uid) is None:
+        raise HTTPException(404, f"no item with uid {item_uid!r}")
+
+    # Over-fetch so franchise suppression cannot return fewer than k when there
+    # are k genuine neighbours behind the sequels.
+    suppress: set[str] = set()
+    if not same_franchise:
+        suppress = related_uids(conn, item_uid, FRANCHISE_RELATIONS)
+    want = k + len(suppress)
+
+    if method == "cf":
+        cf = _collaborative_index(cfg.collaborative_path)
+        if cf is None:
+            raise HTTPException(
+                503,
+                f"no collaborative model at {cfg.collaborative_path}; "
+                "run scripts/cf.py to build it",
+            )
+        # The index translates uid spaces itself; an empty list means this work
+        # has no ratings, which is an answer rather than an error.
+        found = cf.similar_to(conn, item_uid, k=want)
+        if domain is not None:
+            found = [n for n in found if n.item_uid.startswith(f"{domain}:")]
+    else:
+        index = _similarity_index(cfg.embeddings_path)
+        if index is None:
+            raise HTTPException(
+                503,
+                f"no embedding matrix at {cfg.embeddings_path}; "
+                "run scripts/embed.py to build it",
+            )
+        if not index.has(item_uid):
+            # In the catalog but not the matrix: the matrix is a snapshot and is
+            # rebuilt separately, so this is staleness, not a missing item.
+            raise HTTPException(
+                409,
+                f"{item_uid!r} is not in the embedding matrix; "
+                "rebuild it with scripts/embed.py",
+            )
+        found = index.similar_to(item_uid, k=want, domain=domain)
+
+    kept, n_suppressed = [], 0
+    for neighbour in found:
+        if neighbour.item_uid in suppress:
+            n_suppressed += 1
+            continue
+        if len(kept) == k:
+            break
+        kept.append(neighbour)
+
+    items = {i.item_uid: i for i in (get_item(conn, n.item_uid) for n in kept) if i is not None}
+    return SimilarPage(
+        item_uid=item_uid,
+        domain=domain,
+        method=method,
+        n_suppressed=n_suppressed,
+        neighbours=[
+            SimilarItem(score=n.score, item=items[n.item_uid])
+            for n in kept
+            if n.item_uid in items
+        ],
+    )
 
 
 @router.get("/stats", response_model=Stats)

@@ -8,22 +8,30 @@ Architecture and rationale live in `README.md`; Phase 0's closing state is in
 
 ## Where we are
 
-**Phase 0 is complete**, and Phase 3's data is loaded. Schema, ingest, API, UI,
-desktop window and 266 tests, with the `anime` domain populated from two
-sources and a ratings matrix behind it.
+**Phases 0 through 2 are complete**, and both halves of Phase 3's model layer
+are built. Schema, ingest, API, UI, desktop window, two recommendation models
+and 681 tests, across six populated domains with a ratings matrix behind the
+largest.
 
 ```
-catalog        83,981 works      six domains, from 96,112 stored rows
-  anime:anilist  12,837 rows     live GraphQL: synopses + ranked tags
-  anime:mal      14,478 rows     Kaggle MAL dump, static 2018 snapshot
-  anime:jikan        25 rows     live API, capped by the outage below
-manga:anilist   3,300 rows     the works those anime were adapted from
-synopsis coverage  80.0%         anime; 91% for manga
+catalog        83,981 works      six domains, from 105,161 stored rows
+  manga:anilist   29,054 rows    live GraphQL, partitioned sweep
+  anime:anilist   16,372 rows    synopses + ranked tags
+  anime:mal       14,478 rows    Kaggle MAL dump, static 2018 snapshot
+  book:goodbooks  10,000 rows    ratings and shelves, no prose
+  tv:tmdb          9,968 rows    vote floor 25
+  movie:tmdb       9,659 rows    vote floor 50
+  book:openlibrary 9,049 rows    the prose goodbooks lacks
+  music:musicbrainz 6,556 rows   credited composers
+  anime:jikan         25 rows    still capped: warm cache only, see below
+synopsis coverage  84.4%         of works, across all six domains
+relations      57,453 edges      16,524 adaptations + 27,928 franchise
 ratings    19,172,125 ratings    106,402 users x 6,598 anime, scores 1-10
-tests             622            none touch the network or %LOCALAPPDATA%
+tests             681            none touch the network or %LOCALAPPDATA%
 ```
 
-No recommendation models yet, by design.
+Two recommendation models: content embeddings and item-item CF, both
+reachable at `/api/similar/{item_uid}`.
 
 ---
 
@@ -41,17 +49,18 @@ No recommendation models yet, by design.
 | **1** | Manga domain | `manga_anilist.py` + one registry line | **done** |
 | **2** | Entity resolution (same work, N sources) | `links` table, migration 3, `link.py` | **done** |
 | **2** | Cross-source popularity calibration | `popularity_norm` table, migration 4, `popularity.py` | **done** |
-| **2** | Adaptation links (anime ↔ novel, film ↔ book) | `links` table — strongest bridge, no model needed | high value |
+| **2** | Adaptation links (anime ↔ novel, film ↔ book) | `relations` table, migration 5 — 57,453 edges | **done** |
 | **2** | Feature matrices | pyarrow → parquet under `DATA_DIR` | — |
 | **3** | User ratings and feedback | `ratings` table, migration 2, `ratings_mal_csv.py` | **done** |
 | **3** | Content-based similarity | `recsys/models/` -- embeddings + evaluation | **done** |
-| **3** | Collaborative / hybrid models | `recsys/models/` -- needs local ratings | next |
+| **3** | Collaborative models (within-domain) | `models/collaborative.py`, `/api/similar?method=cf` | **done** |
+| **3** | Hybrid: blend content and CF into one ranking | `recsys/models/` -- both halves now exist | next |
 | **3** | Your own library — rate things | `ratings` table, `local:` user namespace — no migration | **the product goal** |
 | **3** | Import an existing library (MAL/AniList export) | new file in `ingest/`, writes `local:` rows | solves cold start |
 | **3** | Canonical tag vocabulary | authored file in repo + feature-build layer | bridge, step 1 |
 | **3** | Cross-domain profile scoring | `recsys/models/` — attributes, not titles | **the bridge** |
 | **4** | Implicit signals (views, dismissals) | new `events` table via a new migration | decide explicitly |
-| **4** | Similarity graph view | `/api/similar/…` + canvas renderer, reads the model's k-NN | — |
+| **4** | Similarity graph view | `/api/similar/{uid}` exists; needs the canvas renderer | half |
 | **4** | Region-aware availability | `REGION` setting — already threaded through | — |
 
 ---
@@ -550,10 +559,57 @@ matters — the loader already reads both, via `MAL_RATINGS_FILENAME`.
 
 ## Next step, and why
 
-**Build `recsys/models/`.** The data constraint below means two models, not
-one; the within-domain CF half is now fully fuelled and is the place to start.
-Ahead of it, Phase 2's parquet export is the natural bridge: `ratings` has no
-secondary index because a bulk full-scan export is its only intended reader.
+**Blend the two models, then open a write path.** Both halves now exist and
+disagree usefully -- `content` reaches *Steins;Gate 0* and *Robotics;Notes* from
+*Steins;Gate*, `cf` reaches *Fullmetal Alchemist* and *Fate/Zero* -- but nothing
+combines them, and a caller has to pick a method. A hybrid ranking is the
+obvious next model.
+
+Behind it sits the thing everything else is infrastructure for: **Loom still
+cannot be told what *you* like.** There is no POST route anywhere in the API and
+the `local:` user namespace appears in no code. That is the product goal, it
+needs no migration, and every model above is waiting for it.
+
+---
+
+## Done: the collaborative half
+
+19.2M ratings had exactly one reader -- the script that wrote them -- across
+59% of the database by size. `models/collaborative.py` turns them into an
+item-item neighbour table: centre each user's ratings on their own mean,
+accumulate cosine and co-rater counts in two chunked matmuls, shrink every
+similarity by `n_common / (n_common + 50)` so four people agreeing cannot
+outrank four thousand.
+
+```
+19,172,125 ratings, 106,402 users     107 s to build
+297,200 pairs over 5,944 anime        654 items dropped under min_raters=20
+2.0 MB parquet                        numpy only -- no scipy, no ALS
+```
+
+**The measurement, and the baseline it has to beat.** Recommending the
+most-rated anime to everybody scores well on held-out recall without being
+personalisation at all -- it is the ratings equivalent of the shared titles that
+flatter the content model. So both are reported, over the same 2,000 held-out
+users, each with one hidden favourite:
+
+```
+                    model   most-rated
+  recall@1           3.2%         2.2%
+  recall@10         14.1%        10.4%
+  recall@50         35.6%        25.4%
+```
+
+A real gain and a modest one: 1.36x the baseline at k=10. Item-item CF is known
+to lean popular and this does -- *Fullmetal Alchemist* and *Code Geass* recur
+across many neighbour lists. Only the gap between the columns is the model.
+
+**The trap it had to avoid.** Every rating names `anime:mal:{id}`, but only 451
+of the 6,598 rated rows represent their work; the other 6,147 lost the primary
+election to an AniList row carrying a synopsis. A model built in rating space
+and read in listing space would join to nothing and raise nothing. The artifact
+is stored in rating space and translated through `links` at read time, in one
+place, with tests that fail if that translation breaks.
 
 ---
 
@@ -937,6 +993,29 @@ common public ones have it.
 ---
 
 ## Known issues carried forward
+
+- **Jikan serves only its warm cache, and probing it will mislead you.**
+  `/anime/1` and `/anime/38000` answer in under a second, which reads as
+  "recovered" -- but of the 2,918 ids `anime_jikan_text` actually wants, **13 of
+  14 returned HTTP 504**. The works with no synopsis are obscure by definition,
+  which is exactly the half Jikan times out on. A trial run made 82 requests and
+  harvested nothing worth the traffic, so it was stopped. The ingester is built,
+  skips unreachable ids, and caches only successes -- so re-running it later
+  asks again for precisely what failed. **Probe with ids from
+  `ids_to_fetch()`, never with a popular id.**
+
+- **2,935 anime works still have no prose, and 13,098 works overall.** Measured
+  by domain: music 6,556 (accepted -- MusicBrainz has no biography), anime 2,935
+  (blocked on Jikan above), book 2,125 and manga 1,389 (**not** fetchable -- those
+  rows already come from their text source, which simply has none), tv 93.
+  Only the anime slice is recoverable at all.
+
+- **The embedding matrix is exactly current and must not be rebuilt casually.**
+  Verified 2026-08-30: 83,981 vectors against 83,981 works, zero missing and
+  zero orphaned. `build_embeddings` replaces the file wholesale -- there is no
+  incremental path -- so a rebuild costs the full ~2.5 h and would have produced
+  an identical file. Check staleness before paying for it, and batch every
+  document-changing job behind a single rebuild.
 
 - ~~Cross-source popularity ordering is wrong.~~ **Resolved**, by calibrating
   on overlap rather than by percentile ranking. See below.

@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from recsys import __version__
 from recsys.db import connect, init_db, upsert_items
 from recsys.config import get_settings
-from recsys.schemas import UnifiedItem
+from recsys.schemas import DOMAINS, UnifiedItem
 
 
 def item(source_id="1", *, title="Cowboy Bebop", domain="anime", **kw) -> UnifiedItem:
@@ -216,3 +216,19 @@ def test_static_assets_are_not_cached(client):
 def test_api_routes_win_over_the_static_mount(client):
     # The UI is mounted at "/", so a bad mount order would shadow /api/*.
     assert client.get("/api/health").json()["status"] == "ok"
+
+
+# ---- the UI's domain filter ----------------------------------------------
+
+
+def test_the_domain_filter_offers_every_domain():
+    """The dropdown shipped without `manga` -- the largest domain in the
+    catalog -- so the biggest slice of it was unreachable from the UI. Pinned
+    against DOMAINS rather than a hand-written list, so adding a domain cannot
+    quietly leave the filter behind again.
+    """
+    from recsys.api.server import UI_DIR
+
+    html = (UI_DIR / "index.html").read_text(encoding="utf-8")
+    missing = [d for d in DOMAINS if f'<option value="{d}">' not in html]
+    assert not missing, f"index.html has no filter option for {missing}"

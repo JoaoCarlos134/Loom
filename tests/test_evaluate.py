@@ -18,6 +18,7 @@ import pytest
 from recsys.db import connect, init_db, upsert_items
 from recsys.models.evaluate import _same_title, adaptation_pairs, adaptation_recall
 from recsys.models.text import build_embeddings
+from recsys.relations import rebuild_relations
 from recsys.schemas import UnifiedItem, utcnow
 
 
@@ -28,6 +29,17 @@ def conn(tmp_path):
     c = connect(path)
     yield c
     c.close()
+
+
+def seed(conn, items):
+    """Upsert, then rebuild the table ``adaptation_pairs`` reads.
+
+    The edges live in ``raw_json`` until ``rebuild_relations`` extracts them,
+    exactly as in the real pipeline -- a test that upserts without it is asking
+    about edges nothing has read yet.
+    """
+    upsert_items(conn, items)
+    rebuild_relations(conn)
 
 
 def anime(source_id, title, *, manga_id=None, relation="ADAPTATION", node_type="MANGA",
@@ -62,25 +74,25 @@ def text_embedder(dim=16):
 
 
 def test_an_adaptation_pair_is_found(conn):
-    upsert_items(conn, [anime(1, "Show", manga_id=50), manga(50, "Book")])
+    seed(conn, [anime(1, "Show", manga_id=50), manga(50, "Book")])
     assert adaptation_pairs(conn) == [("anime:anilist:1", "manga:anilist:50")]
 
 
 def test_a_pair_whose_manga_is_absent_is_not_counted(conn):
     """Scoring against a target the index cannot contain would only ever fail."""
-    upsert_items(conn, [anime(1, "Show", manga_id=999)])
+    seed(conn, [anime(1, "Show", manga_id=999)])
     assert adaptation_pairs(conn) == []
 
 
 @pytest.mark.parametrize("relation", ["CHARACTER", "SPIN_OFF", "OTHER", "SEQUEL"])
 def test_loose_relations_are_not_ground_truth(conn, relation):
     """Only ADAPTATION and SOURCE mean "the same story in two media"."""
-    upsert_items(conn, [anime(1, "Show", manga_id=50, relation=relation), manga(50, "Book")])
+    seed(conn, [anime(1, "Show", manga_id=50, relation=relation), manga(50, "Book")])
     assert adaptation_pairs(conn) == []
 
 
 def test_a_relation_to_another_anime_is_not_a_pair(conn):
-    upsert_items(conn, [anime(1, "Show", manga_id=50, node_type="ANIME"), manga(50, "Book")])
+    seed(conn, [anime(1, "Show", manga_id=50, node_type="ANIME"), manga(50, "Book")])
     assert adaptation_pairs(conn) == []
 
 
@@ -105,7 +117,7 @@ def test_genuinely_different_titles_are_recognised(a, b):
 
 
 def test_the_hard_subset_excludes_shared_title_pairs(conn, tmp_path):
-    upsert_items(conn, [
+    seed(conn, [
         anime(1, "Same Title", manga_id=50), manga(50, "Same Title"),
         anime(2, "An Anime", manga_id=51), manga(51, "A Quite Different Manga"),
     ])
@@ -120,7 +132,7 @@ def test_the_hard_subset_excludes_shared_title_pairs(conn, tmp_path):
 def test_recall_is_perfect_when_the_texts_match(conn, tmp_path):
     """The fake embedder hashes the document, so identical documents give
     identical vectors and the true target must rank first."""
-    upsert_items(conn, [
+    seed(conn, [
         anime(1, "Shared", manga_id=50, description="Exactly the same prose."),
         manga(50, "Shared", description="Exactly the same prose."),
         manga(51, "Unrelated", description="Something else entirely."),
@@ -134,7 +146,7 @@ def test_recall_is_perfect_when_the_texts_match(conn, tmp_path):
 
 
 def test_the_baseline_scales_with_the_haystack(conn, tmp_path):
-    upsert_items(conn, [anime(1, "A", manga_id=50)] + [manga(50 + i, f"M{i}") for i in range(20)])
+    seed(conn, [anime(1, "A", manga_id=50)] + [manga(50 + i, f"M{i}") for i in range(20)])
     out = tmp_path / "e.parquet"
     build_embeddings(conn, text_embedder(), out_path=out)
     result = adaptation_recall(conn, out)
@@ -143,7 +155,7 @@ def test_the_baseline_scales_with_the_haystack(conn, tmp_path):
 
 
 def test_no_pairs_is_reported_rather_than_divided_by(conn, tmp_path):
-    upsert_items(conn, [anime(1, "Lonely")])
+    seed(conn, [anime(1, "Lonely")])
     out = tmp_path / "e.parquet"
     build_embeddings(conn, text_embedder(), out_path=out)
     result = adaptation_recall(conn, out)

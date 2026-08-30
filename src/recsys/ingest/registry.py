@@ -18,6 +18,12 @@ def _jikan() -> type[IngestRunner]:
     return JikanAnimeIngester
 
 
+def _jikan_text() -> type[IngestRunner]:
+    from recsys.ingest.anime_jikan_text import JikanAnimeTextIngester
+
+    return JikanAnimeTextIngester
+
+
 def _mal_csv() -> type[IngestRunner]:
     from recsys.ingest.anime_mal_csv import MalCsvAnimeIngester
 
@@ -76,6 +82,7 @@ def _mal_ratings() -> type[IngestRunner]:
 # when that ingester actually runs.
 REGISTRY: dict[str, Callable[[], type[IngestRunner]]] = {
     "anime_jikan": _jikan,
+    "anime_jikan_text": _jikan_text,
     "anime_mal_csv": _mal_csv,
     "anime_anilist": _anilist,
     "manga_anilist": _manga_anilist,

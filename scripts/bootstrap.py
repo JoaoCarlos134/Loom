@@ -33,6 +33,8 @@ from recsys.ingest.registry import available, get_ingester  # noqa: E402
 from recsys.link import LinkResult, rebuild_links  # noqa: E402
 from recsys.popularity import PopularityResult, rebuild_popularity  # noqa: E402
 from recsys.prune import prune  # noqa: E402
+from recsys.relations import RelationResult, rebuild_relations  # noqa: E402
+from recsys.works import WorksResult, rebuild_works  # noqa: E402
 from recsys.log import get_logger, setup_logging  # noqa: E402
 
 log = get_logger("recsys.bootstrap")
@@ -71,6 +73,8 @@ def report(
     results: list[IngestResult],
     links: LinkResult | None,
     pops: PopularityResult | None,
+    works: WorksResult | None = None,
+    rels: RelationResult | None = None,
 ) -> None:
     settings = get_settings()
 
@@ -105,6 +109,16 @@ def report(
         for s in pops.fallbacks:
             print(f"\n  !! {s.domain}/{s.source}: no shared works to calibrate on; "
                   f"quantile-mapped, which assumes its rows are representative")
+
+    if works is not None:
+        print("\nRead view")
+        print(f"  {works.n_works} works indexed for reading; "
+              f"{works.n_uncalibrated} ordered by a raw count")
+
+    if rels is not None:
+        print("\nRelation edges")
+        top = sorted(rels.by_relation.items(), key=lambda kv: (-kv[1], kv[0]))[:6]
+        print(f"  {rels.n_edges} edges: " + ", ".join(f"{n} {r}" for r, n in top))
 
     with session() as conn:
         total = count_items(conn)
@@ -177,14 +191,21 @@ def main(argv: list[str] | None = None) -> int:
     # first. Cheap and idempotent, so it runs even on a --no-ingest pass.
     links: LinkResult | None = None
     pops: PopularityResult | None = None
+    works: WorksResult | None = None
+    rels: RelationResult | None = None
     if not args.no_link:
         with session() as conn:
             links = rebuild_links(conn)
             # Strictly after linking: the calibration anchors are the works
             # that linking just proved two sources both carry.
             pops = rebuild_popularity(conn)
+            # Strictly after both: the read view stores what they decided --
+            # which row represents a work, and what it sorts by.
+            works = rebuild_works(conn)
+            # Independent of the three above; it reads only stored raw_json.
+            rels = rebuild_relations(conn)
 
-    report(results, links, pops)
+    report(results, links, pops, works, rels)
     return 1 if any(r.status != "ok" for r in results) else 0
 
 

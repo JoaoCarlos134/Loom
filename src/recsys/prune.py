@@ -87,10 +87,11 @@ def rules(settings) -> list[PruneRule]:
 def prune(conn: sqlite3.Connection, settings, *, dry_run: bool = True) -> PruneResult:
     """Count -- and, unless ``dry_run``, delete -- rows that fail the filters.
 
-    Deleting an item leaves ``links`` and ``popularity_norm`` pointing at
-    nothing, so both are rebuilt by the caller afterwards. They are derived
-    tables and a full rebuild is under a second; carrying cascade rules for a
-    once-in-a-while operation would be the more fragile choice.
+    Deleting an item leaves every derived table -- ``links``,
+    ``popularity_norm``, ``works`` and ``relations`` -- pointing at nothing, so
+    all four are rebuilt by the caller afterwards. They are derived and a full
+    rebuild is a second or two; carrying cascade rules for a once-in-a-while
+    operation would be the more fragile choice.
     """
     result = PruneResult(dry_run=dry_run)
     doomed: set[str] = set()

@@ -236,6 +236,29 @@ class ItemsPage(BaseModel):
     items: list[UnifiedItem]
 
 
+class SimilarItem(BaseModel):
+    """One neighbour, with the catalog row so a caller needs no second request."""
+
+    score: float
+    item: UnifiedItem
+
+
+class SimilarPage(BaseModel):
+    """/api/similar response.
+
+    ``n_suppressed`` is reported rather than hidden: neighbours dropped for
+    sharing a franchise with the query are the difference between a
+    recommendation and a table of contents, and a caller comparing results
+    should be able to see how many the filter took.
+    """
+
+    item_uid: str
+    domain: str | None = None
+    method: str = "content"
+    n_suppressed: int = 0
+    neighbours: list[SimilarItem]
+
+
 class DomainStats(BaseModel):
     domain: str
     n_items: int

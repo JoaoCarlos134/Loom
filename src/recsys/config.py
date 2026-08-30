@@ -52,6 +52,12 @@ class Settings(BaseSettings):
     jikan_rate_per_sec: float = 3.0
     jikan_rate_per_min: float = 60.0
     jikan_max_retries: int = 5
+    # `anime_jikan_text` asks for one title per request, so this is a ceiling on
+    # requests, not on pages. 2,935 anime works carry no synopsis at all; at
+    # Jikan's 60/min that is about 50 minutes, and the cap exists so a run can
+    # be bounded rather than because the work should stop short of finishing.
+    jikan_text_target_count: int = 20000
+    jikan_text_max_retries: int = 2
 
     # MyAnimeList CSV dump (Kaggle). Path empty -> fetched via kagglehub and
     # cached under ~/.cache/kagglehub. target 0 -> ingest the whole file.
@@ -185,6 +191,11 @@ class Settings(BaseSettings):
     def embeddings_path(self) -> Path:
         """The item embedding matrix. Derived, rebuildable, outside the repo."""
         return self.data_dir / "features" / "embeddings.parquet"
+
+    @property
+    def collaborative_path(self) -> Path:
+        """The item-item neighbour table. Derived from `ratings`, same rules."""
+        return self.data_dir / "features" / "collaborative.parquet"
 
     @property
     def cache_dir(self) -> Path:
