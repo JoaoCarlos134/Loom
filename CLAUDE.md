@@ -76,7 +76,7 @@ for what comes next.
 
 ```powershell
 uv sync                                       # install from uv.lock
-uv run pytest                                 # 581 tests, none touch the network
+uv run pytest                                 # 622 tests, none touch the network
 uv run python scripts/bootstrap.py            # init schema + run ingesters
 uv run python scripts/bootstrap.py --only anime_mal_csv --limit 100
 uv run python scripts/bootstrap.py --only anime_mal_ratings   # 19.2M ratings, ~75 s
@@ -85,6 +85,8 @@ uv run python scripts/bootstrap.py --only movie_tmdb --only tv_tmdb  # needs TMD
 uv run python scripts/bootstrap.py --only book_goodbooks       # 10k books, ~4 s
 uv run python scripts/bootstrap.py --only music_musicbrainz    # composers, 1 req/s
 uv run python scripts/bootstrap.py --no-ingest --prune-dry-run # what filters reject
+uv run python scripts/embed.py                # build the embedding matrix, ~2.5 h
+uv run python scripts/embed.py --evaluate     # score it against adaptation links
 uv run python app.py                          # native window (--browser, --no-ui)
 ```
 
@@ -121,6 +123,17 @@ indifferent to which kind they hold. Same three-step seam either way.
   list in `link.py` or `db.py` would mean editing them to add a source, which the
   invariant above forbids. `_richness()` prefers whichever row actually has a
   synopsis and more tags.
+
+- **A model claim needs a measurement, and the measurement needs a hard half.**
+  Cross-domain similarity cannot be judged by eye. `models/evaluate.py` scores
+  against adaptation edges -- ground truth the sources assert -- and reports the
+  pairs whose titles *differ* separately, because 87% share a title and the
+  embedded document leads with the title. The headline number is largely a
+  string match congratulating itself; the hard column is the evidence.
+
+- **The embedder is a parameter, never an import.** `build_embeddings` takes a
+  callable, so the whole pipeline is tested with a deterministic fake and no
+  test ever downloads a model.
 
 - **No single source is complete, and reads must show the union.** Open Library
   has a book's synopsis and none of its ratings; goodbooks has the ratings and

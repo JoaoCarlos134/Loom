@@ -179,6 +179,11 @@ src/recsys/db.py          SQLite: items + items_fts (FTS5) + ratings + links
            link.py        entity resolution: which rows are one work
            popularity.py  one popularity scale across sources
            prune.py       drop rows the ingest filters would reject
+
+src/recsys/models/       reads the catalog, writes derived artifacts
+              text.py    documents -> embedding matrix (parquet)
+              similarity.py  brute-force nearest neighbours
+              evaluate.py    recall against known adaptation links
            schemas.py     UnifiedItem — the one row shape all domains collapse into
            config.py      pydantic-settings, the only reader of the environment
 

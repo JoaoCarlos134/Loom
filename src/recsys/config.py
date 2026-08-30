@@ -146,6 +146,22 @@ class Settings(BaseSettings):
     mal_ratings_path: str = ""
     mal_ratings_target_count: int = 0
 
+    # --- models ---
+    # A small ONNX sentence embedder: 384 dimensions, ~67 MB, CPU-only, no
+    # torch. Fetched once into DATA_DIR/models -- fastembed otherwise caches to
+    # a temporary directory that Windows clears, silently re-downloading it.
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
+    embedding_batch_size: int = 64
+    # Measured on 20 cores over real catalog documents (median 512 characters):
+    #   default                  194 docs/min   -> 7.2 hours for the catalog
+    #   threads only             204 docs/min   -> no real change
+    #   threads + parallel       557 docs/min   -> 2.5 hours
+    # Threads alone does nothing because onnxruntime does not parallelise one
+    # short sequence well; the gain comes from embedding batches in parallel
+    # processes. 0 means "every core" for both, which is fastembed's convention.
+    embedding_threads: int = 0
+    embedding_parallel: int = 0
+
     http_cache_ttl_days: int = 30
 
     # --- server ---
@@ -164,6 +180,11 @@ class Settings(BaseSettings):
     @property
     def db_path(self) -> Path:
         return self.data_dir / "recsys.db"
+
+    @property
+    def embeddings_path(self) -> Path:
+        """The item embedding matrix. Derived, rebuildable, outside the repo."""
+        return self.data_dir / "features" / "embeddings.parquet"
 
     @property
     def cache_dir(self) -> Path:

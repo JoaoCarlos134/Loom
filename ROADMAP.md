@@ -20,7 +20,7 @@ catalog        83,981 works      six domains, from 96,112 stored rows
 manga:anilist   3,300 rows     the works those anime were adapted from
 synopsis coverage  80.0%         anime; 91% for manga
 ratings    19,172,125 ratings    106,402 users x 6,598 anime, scores 1-10
-tests             581            none touch the network or %LOCALAPPDATA%
+tests             622            none touch the network or %LOCALAPPDATA%
 ```
 
 No recommendation models yet, by design.
@@ -44,7 +44,8 @@ No recommendation models yet, by design.
 | **2** | Adaptation links (anime ↔ novel, film ↔ book) | `links` table — strongest bridge, no model needed | high value |
 | **2** | Feature matrices | pyarrow → parquet under `DATA_DIR` | — |
 | **3** | User ratings and feedback | `ratings` table, migration 2, `ratings_mal_csv.py` | **done** |
-| **3** | Content-based / collaborative / hybrid models | new `recsys/models/` package | **next** |
+| **3** | Content-based similarity | `recsys/models/` -- embeddings + evaluation | **done** |
+| **3** | Collaborative / hybrid models | `recsys/models/` -- needs local ratings | next |
 | **3** | Your own library — rate things | `ratings` table, `local:` user namespace — no migration | **the product goal** |
 | **3** | Import an existing library (MAL/AniList export) | new file in `ingest/`, writes `local:` rows | solves cold start |
 | **3** | Canonical tag vocabulary | authored file in repo + feature-build layer | bridge, step 1 |
@@ -52,6 +53,79 @@ No recommendation models yet, by design.
 | **4** | Implicit signals (views, dismissals) | new `events` table via a new migration | decide explicitly |
 | **4** | Similarity graph view | `/api/similar/…` + canvas renderer, reads the model's k-NN | — |
 | **4** | Region-aware availability | `REGION` setting — already threaded through | — |
+
+---
+
+## Done: the content bridge, and evidence that it works
+
+83,981 works embedded into one 384-dimension space -- every domain, including
+the 6,556 music artists and the 23% of books with no synopsis, because the
+document is title + tags + prose rather than prose alone.
+
+**Why embeddings rather than the canonical tag vocabulary the roadmap planned.**
+The tag route was measured first and is badly asymmetric: for a typical anime,
+75% of its tags exist somewhere in the film vocabulary, but for a typical book
+only **8%** of its tags exist in the anime vocabulary. AniList uses a curated
+441-tag set; Goodreads and TMDB are free-form with 27,067 and 18,643. So anime
+tags are general enough to appear everywhere and book tags specific enough to
+appear nowhere else. Embedding has no vocabulary to align.
+
+### The measurement
+
+Adaptation edges are ground truth nobody had to label -- AniList asserts that an
+anime came from a particular manga. For each such anime, ask for the nearest
+manga among all 29,034 and check whether the real one is there.
+
+```
+                     all   diff. title
+  pairs             6440           816
+  recall@1         71.1%         39.3%
+  recall@10        90.1%         66.5%
+  recall@50        93.7%         75.4%
+
+  random baseline @10 = 0.03%
+```
+
+**The right column is the one that counts.** 5,624 of those pairs share a title
+and the document leads with the title, so the left column is substantially a
+string match dressed up as semantics. On the 816 pairs where the titles genuinely
+differ, the model still finds the true source manga in the top ten out of 29,034
+two-thirds of the time -- about 2,000x better than chance. That is real semantic
+work, and it is the number to quote.
+
+It remains a floor, not a ceiling: an adaptation shares plot, characters and
+often synopsis wording, making it the easiest cross-domain pair there is.
+
+### What the recommendations actually look like
+
+*Steins;Gate* reaches **Idoru** (Gibson cyberpunk) and **Saphirblau** (time-travel
+YA); *Cowboy Bebop* reaches **Sanjuro** and **City Hunter**. Two honest
+observations from the same spot check:
+
+- **Same-franchise items dominate.** The nearest film to *Steins;Gate* is the
+  *Steins;Gate* film. Correct, and not discovery -- a recommender will want to
+  suppress items sharing a work's franchise.
+- **Books recommended for anime skew to manga volumes.** goodbooks-10k contains
+  manga collected editions, so "book" neighbours are often manga rather than
+  novels. Not wrong -- they are books on Goodreads -- but worth knowing before
+  reading the results as novel recommendations.
+
+### Cost, measured
+
+`fastembed` on ONNX runtime: no torch, 15 prebuilt wheels, nothing compiles.
+The model is `bge-small-en-v1.5`, 384 dimensions, 67 MB, CPU only.
+
+```
+default                  194 docs/min   -> 7.2 hours
+threads only             204 docs/min   -> no real change
+threads + parallel       557 docs/min   -> 2.5 hours
+```
+
+Threads alone does nothing -- onnxruntime does not parallelise one short
+sequence well; the gain is embedding batches in parallel processes. The matrix
+is 384 floats per work, streamed to parquet a batch at a time rather than held
+in memory until the end, so an interrupted build costs minutes rather than
+everything.
 
 ---
 
