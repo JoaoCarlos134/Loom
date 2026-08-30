@@ -13,6 +13,7 @@ import pytest
 
 from recsys.db import (
     connect,
+    fill_from_siblings,
     count_items,
     count_rows,
     domain_stats,
@@ -261,6 +262,69 @@ def test_paging_is_consistent_with_the_collapsed_total(conn):
     total, page = query_items(conn, limit=3, offset=0)
     assert total == 5 and len(page) == 3
     assert len({i.item_uid for i in page}) == 3
+
+
+# ---- no single source is complete -----------------------------------------
+
+
+def test_a_gap_in_the_winner_is_filled_from_its_sibling(conn):
+    """Open Library has a book's synopsis and none of its ratings; goodbooks has
+    the ratings and no prose. The row with text wins, so without this a book
+    would display with a synopsis and no score -- worse than either row alone."""
+    upsert_items(conn, [
+        item("goodbooks", 1, mal_id=1, title="Rated", n_ratings=5000, popularity=5000.0),
+        item("openlibrary", 2, mal_id=1, title="Described", description="Real prose."),
+    ])
+    rebuild_links(conn)
+    _, items = query_items(conn)
+    assert (items[0].title, items[0].description) == ("Described", "Real prose.")
+    assert items[0].n_ratings == 5000  # borrowed from the sibling
+
+
+def test_a_populated_field_is_never_overwritten(conn):
+    """Only nulls are filled, so no source's own datum is replaced by another's."""
+    upsert_items(conn, [
+        # The richer row wins: it has a description and more tags.
+        item("winner", 1, mal_id=1, description="Mine", n_ratings=10, tags=["a", "b"]),
+        item("loser", 2, mal_id=1, description="Theirs", n_ratings=99),
+    ])
+    rebuild_links(conn)
+    _, items = query_items(conn)
+    assert items[0].source == "winner"
+    assert items[0].description == "Mine"
+    assert items[0].n_ratings == 10  # not the sibling's 99
+
+
+def test_tags_are_not_merged(conn):
+    """Filling a null is unambiguous; merging two sources' tags is a modelling
+    decision, and Phase 3 reads the real union through work_members()."""
+    upsert_items(conn, [
+        item("a", 1, mal_id=1, tags=["alpha"], description="text"),
+        item("b", 2, mal_id=1, tags=["beta", "gamma"]),
+    ])
+    rebuild_links(conn)
+    _, items = query_items(conn)
+    assert "beta" not in items[0].tags
+
+
+def test_an_unlinked_item_is_untouched(conn):
+    upsert_items(conn, [item("solo", 1, mal_id=1)])
+    rebuild_links(conn)
+    _, items = query_items(conn)
+    assert items[0].description is None
+
+
+def test_get_item_fills_too(conn):
+    upsert_items(conn, [
+        item("a", 1, mal_id=1, n_ratings=42),
+        item("b", 2, mal_id=1, description="prose"),
+    ])
+    rebuild_links(conn)
+    assert get_item(conn, "anime:b:2").n_ratings == 42
+
+
+def test_filling_an_empty_page_is_a_noop(conn):
+    assert fill_from_siblings(conn, []) == []
 
 
 def test_reads_are_unaffected_before_any_link_is_built(conn):

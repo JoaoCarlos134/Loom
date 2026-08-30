@@ -20,7 +20,7 @@ catalog        83,981 works      six domains, from 96,112 stored rows
 manga:anilist   3,300 rows     the works those anime were adapted from
 synopsis coverage  80.0%         anime; 91% for manga
 ratings    19,172,125 ratings    106,402 users x 6,598 anime, scores 1-10
-tests             531            none touch the network or %LOCALAPPDATA%
+tests             581            none touch the network or %LOCALAPPDATA%
 ```
 
 No recommendation models yet, by design.
@@ -34,6 +34,7 @@ No recommendation models yet, by design.
 | **0** | Skeleton, schema, one domain end to end | — | **done** |
 | **1** | More domains: books, movies/TV, music | `book_goodbooks`, `movie_tmdb`, `tv_tmdb`, `music_musicbrainz` | **done** |
 | **1** | Catalog quality filters | thresholds in `config.py`, `prune.py` | **done** |
+| **1** | Book synopses | `book_openlibrary`, `isbn` in `LINK_KEYS` | **done** |
 | **1** | Complete sweeps (partitioned) | `partition_by_year` in `anilist.py` | **done** |
 | **1** | Cross-source id linking | `external_ids` — already populated | ready |
 | **1** | Synopses + rich tags + adaptation edges | `anime_anilist` ingester, joins on `idMal` | **done** |
@@ -51,6 +52,58 @@ No recommendation models yet, by design.
 | **4** | Implicit signals (views, dismissals) | new `events` table via a new migration | decide explicitly |
 | **4** | Similarity graph view | `/api/similar/…` + canvas renderer, reads the model's k-NN | — |
 | **4** | Region-aware availability | `REGION` setting — already threaded through | — |
+
+---
+
+## Done: books have text
+
+goodbooks-10k ships no synopsis, which left the book domain at **0% description
+coverage** while films sat at 99%. Books share no identifier with any other
+domain, so text and subjects are the only route from a novel to an anime -- this
+was the largest single hole in the bridge.
+
+```
+book synopsis coverage   0%  ->  77%
+book average tags     10.4  ->  14.3
+```
+
+Descriptions live on Open Library's *work* record, not the ISBN-addressed
+*edition*, so a naive walk is two requests a book. The batch endpoint resolves a
+hundred ISBNs to work keys in one call, making it ~100 batch requests plus one
+work fetch each rather than 20,000.
+
+Rows land as `book:openlibrary:{isbn}` beside the goodbooks rows and collapse
+onto them -- which is why `isbn` joined `link.LINK_KEYS`. Keyed by ISBN rather
+than by Open Library's work id on purpose: two Goodreads books can resolve to
+one work, and keying on the work would merge them into a row linking back to
+only one. ISBNs under-link rather than over-link, which is the safe direction.
+
+### The feature exposed a real defect, twice over
+
+Open Library carries no audience count and no year, and its row *wins* the
+primary election because it has the text. So enriching a book made it worse:
+
+1. **It sorted to the bottom.** Ordering happens in SQL against the stored
+   value, so a gap there cannot be patched after the query. `popularity.py` now
+   gives every row of a work the best figure any of its sources reported --
+   popularity describes the *work*, not the row that happens to represent it.
+2. **It displayed with no rating, year or cover.** `db.fill_from_siblings`
+   completes the representative's null scalars from the other rows of its work.
+   Only nulls, and only within a work, so no source's datum is ever replaced by
+   another's. Lists are not merged: filling a null is unambiguous, merging two
+   vocabularies is a modelling decision that belongs to Phase 3, which reads the
+   real union through `work_members()`.
+
+Both are general, not book-specific. Any future source that is strong in one
+dimension and empty in another now composes instead of degrading.
+
+### What remains thin
+
+- **23% of books still have no synopsis.** Open Library simply has none for
+  them; the batch resolve found a work for nearly every ISBN, but not every work
+  carries prose.
+- **Music remains at 0% text and 2.2 tags**, and is accepted as such: it earns
+  its place through the composer link rather than content similarity.
 
 ---
 

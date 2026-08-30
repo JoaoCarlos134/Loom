@@ -76,7 +76,7 @@ for what comes next.
 
 ```powershell
 uv sync                                       # install from uv.lock
-uv run pytest                                 # 531 tests, none touch the network
+uv run pytest                                 # 581 tests, none touch the network
 uv run python scripts/bootstrap.py            # init schema + run ingesters
 uv run python scripts/bootstrap.py --only anime_mal_csv --limit 100
 uv run python scripts/bootstrap.py --only anime_mal_ratings   # 19.2M ratings, ~75 s
@@ -121,6 +121,15 @@ indifferent to which kind they hold. Same three-step seam either way.
   list in `link.py` or `db.py` would mean editing them to add a source, which the
   invariant above forbids. `_richness()` prefers whichever row actually has a
   synopsis and more tags.
+
+- **No single source is complete, and reads must show the union.** Open Library
+  has a book's synopsis and none of its ratings; goodbooks has the ratings and
+  no prose. Two mechanisms carry that: `popularity.py` gives every row of a work
+  the best figure any source reported (ordering happens in SQL, so a gap there
+  cannot be patched afterwards), and `db.fill_from_siblings` completes the
+  representative's null scalars from its siblings. Neither ever overwrites a
+  populated field, and lists are deliberately not merged -- Phase 3 reads the
+  real union through `link.work_members()`.
 
 - **Filter at the source, not after the fact.** Every row an ingester rejects
   before requesting it is a request not made and a row not stored. Thresholds

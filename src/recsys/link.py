@@ -32,9 +32,16 @@ from recsys.schemas import make_work_uid
 
 log = get_logger(__name__)
 
-#: External-id fields that identify a work across sources. Add a key here when a
-#: new source brings one; nothing else in this module needs to change.
-LINK_KEYS: tuple[str, ...] = ("mal_id",)
+#: External-id fields that identify a work across sources, most trustworthy
+#: first -- a row carrying several joins on the first it has. Add a key here
+#: when a new source brings one; nothing else in this module needs to change.
+#:
+#: ``isbn`` identifies a printing rather than a work, which is looser than
+#: ``mal_id``: two editions of one novel carry different ISBNs and will not be
+#: joined. That under-links rather than over-links, which is the safe direction
+#: -- a missed link leaves two rows where there should be one, while a false
+#: link hides a real book behind an unrelated one.
+LINK_KEYS: tuple[str, ...] = ("mal_id", "isbn")
 
 
 @dataclass

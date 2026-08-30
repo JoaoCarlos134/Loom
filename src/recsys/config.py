@@ -109,6 +109,17 @@ class Settings(BaseSettings):
     goodbooks_min_tag_count: int = 50
     goodbooks_max_tags: int = 20
 
+    # Open Library (book descriptions). Keyless. Driven by the ISBNs already in
+    # the catalog, so book_goodbooks runs first.
+    openlibrary_url: str = "https://openlibrary.org"
+    openlibrary_target_count: int = 0  # 0 = every ISBN in the catalog
+    openlibrary_max_subjects: int = 25
+    # Open Library is a nonprofit running on donated infrastructure. This is
+    # well inside what they ask for and there is no reason to push it.
+    openlibrary_rate_per_sec: float = 5.0
+    openlibrary_rate_per_min: float = 0.0
+    openlibrary_max_retries: int = 6
+
     # MusicBrainz + Deezer (music). Both keyless. The domain is driven by the
     # composers credited in the film/TV catalog, so movie_tmdb / tv_tmdb run
     # first. See music_musicbrainz.py for why it is not a general music dump.

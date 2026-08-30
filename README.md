@@ -72,6 +72,7 @@ Two sources feed the `anime` domain:
 | `tv_tmdb` | TMDB, live | ~4k items | ~25 min; same credential |
 | `book_goodbooks` | goodbooks-10k, GitHub CSVs | 10k items | ~4 s, no credential |
 | `music_musicbrainz` | MusicBrainz + Deezer | ~5k artists | hours; MusicBrainz asks 1 req/s |
+| `book_openlibrary` | Open Library | ~9k enriched | ~30 min; the synopses goodbooks lacks |
 | `anime_mal_ratings` | same Kaggle archive | 19.2M ratings | ~75 s, grows the DB to ~1.3 GB |
 
 `anime_mal_ratings` is **not** in the default `INGESTERS` list. It is a one-off
@@ -198,6 +199,7 @@ src/recsys/ingest/
   tv_tmdb.py              TMDB television → UnifiedItem
   book_goodbooks.py       goodbooks-10k CSVs → UnifiedItem
   music_musicbrainz.py    composers the catalog credits → UnifiedItem
+  book_openlibrary.py     Open Library work text → UnifiedItem
   ratings_mal_csv.py      Kaggle MAL user lists → ratings rows (a sibling
                           contract, not an Ingester — see below)
 ```

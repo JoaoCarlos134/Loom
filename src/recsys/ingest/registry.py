@@ -54,6 +54,12 @@ def _goodbooks() -> type[IngestRunner]:
     return GoodbooksIngester
 
 
+def _openlibrary() -> type[IngestRunner]:
+    from recsys.ingest.book_openlibrary import OpenLibraryIngester
+
+    return OpenLibraryIngester
+
+
 def _musicbrainz() -> type[IngestRunner]:
     from recsys.ingest.music_musicbrainz import MusicBrainzIngester
 
@@ -76,6 +82,7 @@ REGISTRY: dict[str, Callable[[], type[IngestRunner]]] = {
     "movie_tmdb": _movie_tmdb,
     "tv_tmdb": _tv_tmdb,
     "book_goodbooks": _goodbooks,
+    "book_openlibrary": _openlibrary,
     "music_musicbrainz": _musicbrainz,
     "anime_mal_ratings": _mal_ratings,
 }

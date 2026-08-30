@@ -175,6 +175,37 @@ def _anchors(
     )
 
 
+def _share_within_works(
+    conn: sqlite3.Connection, values: dict[str, float]
+) -> dict[str, float]:
+    """Give every row of a work the best figure any of its sources reported.
+
+    Popularity describes the *work*, not the row that happens to represent it.
+    Sources measure it with wildly different completeness -- Open Library
+    carries no audience count at all, so a book row from there would sort below
+    everything despite being the row with the synopsis, purely because it won
+    the primary election. Taking the maximum across a work's rows says "this is
+    how big this thing is, according to whichever source knows best", which is
+    the honest reading.
+
+    Necessary rather than cosmetic: ordering happens in SQL against the stored
+    value, so filling the gap after the query would come too late to fix it.
+    """
+    members: dict[str, list[str]] = {}
+    for item_uid, work_uid in conn.execute("SELECT item_uid, work_uid FROM links"):
+        members.setdefault(work_uid, []).append(item_uid)
+
+    shared = dict(values)
+    for group in members.values():
+        known = [values[uid] for uid in group if uid in values]
+        if not known:
+            continue
+        best = max(known)
+        for uid in group:
+            shared[uid] = best
+    return shared
+
+
 def rebuild_popularity(conn: sqlite3.Connection) -> PopularityResult:
     """Recompute every calibrated popularity from scratch. Idempotent.
 
@@ -249,12 +280,14 @@ def rebuild_popularity(conn: sqlite3.Connection) -> PopularityResult:
 
         log.info("popularity: %s calibrated against %r", domain, reference)
 
-    result.n_scored = len(to_insert)
+    values = _share_within_works(conn, dict(to_insert))
+    result.n_scored = len(values)
 
     with conn:  # one transaction: never leave the catalog half-calibrated
         conn.execute("DELETE FROM popularity_norm")
         conn.executemany(
-            "INSERT INTO popularity_norm (item_uid, value) VALUES (?, ?)", to_insert
+            "INSERT INTO popularity_norm (item_uid, value) VALUES (?, ?)",
+            list(values.items()),
         )
 
     for s in result.scales:

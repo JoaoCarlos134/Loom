@@ -410,14 +410,72 @@ def query_items(
         f"SELECT {_SELECT_COLS} {base}{tail} {order} LIMIT ? OFFSET ?",
         [*params, limit, offset],
     ).fetchall()
-    return (int(total), [UnifiedItem.from_row(r) for r in rows])
+    items = [UnifiedItem.from_row(r) for r in rows]
+    return (int(total), fill_from_siblings(conn, items))
+
+
+#: Scalars a sibling row may supply when the representative lacks them. Lists
+#: are deliberately absent: filling a null is unambiguous, but merging two
+#: sources' tags is a modelling decision, and Phase 3 reads the real union
+#: through `link.work_members()`.
+_FILLABLE = ("year", "description", "popularity", "mean_rating", "n_ratings", "image_url")
+
+
+def fill_from_siblings(
+    conn: sqlite3.Connection, items: list[UnifiedItem]
+) -> list[UnifiedItem]:
+    """Complete each work's representative from the other rows describing it.
+
+    No single source is complete. Open Library has a book's synopsis and none of
+    its ratings; goodbooks has the ratings and no prose. The representative wins
+    on having text, so without this a book would display with a synopsis and no
+    score, year or cover -- worse than either row alone.
+
+    Only nulls are filled, and only from rows of the same work, so nothing here
+    can overwrite a source's own datum with another's.
+    """
+    gapped = [i for i in items if any(getattr(i, f) is None for f in _FILLABLE)]
+    if not gapped:
+        return items
+
+    by_uid = {i.item_uid: i for i in gapped}
+    donors: dict[str, list[sqlite3.Row]] = {}
+    for chunk in _chunks(list(by_uid), 400):
+        marks = ",".join("?" * len(chunk))
+        for row in conn.execute(
+            f"""SELECT mine.item_uid AS target, {_SELECT_COLS}
+                FROM links mine
+                JOIN links theirs ON theirs.work_uid = mine.work_uid
+                JOIN items i ON i.item_uid = theirs.item_uid
+                WHERE mine.item_uid IN ({marks}) AND theirs.item_uid != mine.item_uid""",
+            list(chunk),
+        ):
+            donors.setdefault(row["target"], []).append(row)
+
+    filled: list[UnifiedItem] = []
+    for item in items:
+        rows = donors.get(item.item_uid)
+        if not rows:
+            filled.append(item)
+            continue
+        patch = {
+            field: value
+            for field in _FILLABLE
+            if getattr(item, field) is None
+            for value in (next((r[field] for r in rows if r[field] is not None), None),)
+            if value is not None
+        }
+        filled.append(item.model_copy(update=patch) if patch else item)
+    return filled
 
 
 def get_item(conn: sqlite3.Connection, item_uid: str) -> UnifiedItem | None:
     row = conn.execute(
         f"SELECT {_SELECT_COLS} FROM items i WHERE i.item_uid = ?", (item_uid,)
     ).fetchone()
-    return UnifiedItem.from_row(row) if row else None
+    if row is None:
+        return None
+    return fill_from_siblings(conn, [UnifiedItem.from_row(row)])[0]
 
 
 def count_items(conn: sqlite3.Connection) -> int:
