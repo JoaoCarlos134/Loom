@@ -32,6 +32,7 @@ from recsys.ingest.base import IngestResult  # noqa: E402
 from recsys.ingest.registry import available, get_ingester  # noqa: E402
 from recsys.link import LinkResult, rebuild_links  # noqa: E402
 from recsys.popularity import PopularityResult, rebuild_popularity  # noqa: E402
+from recsys.prune import prune  # noqa: E402
 from recsys.log import get_logger, setup_logging  # noqa: E402
 
 log = get_logger("recsys.bootstrap")
@@ -139,6 +140,11 @@ def main(argv: list[str] | None = None) -> int:
                         help="initialise the schema and report, but fetch nothing")
     parser.add_argument("--no-link", action="store_true",
                         help="skip entity resolution, leaving duplicates visible")
+    parser.add_argument("--prune", action="store_true",
+                        help="DELETE stored rows that today's ingest filters would "
+                             "reject (too few ratings, adult, not a work)")
+    parser.add_argument("--prune-dry-run", action="store_true",
+                        help="report what --prune would delete, and delete nothing")
     args = parser.parse_args(argv)
 
     setup_logging()
@@ -155,6 +161,16 @@ def main(argv: list[str] | None = None) -> int:
         if unknown:
             parser.error(f"unknown ingester(s) {unknown}; available: {available()}")
         results = asyncio.run(run_ingesters(names, args.limit))
+
+    if args.prune or args.prune_dry_run:
+        # Before linking, so the derived tables are rebuilt over what survives.
+        with session() as conn:
+            pruned = prune(conn, settings, dry_run=not args.prune)
+        print("\nPrune" + (" (dry run)" if pruned.dry_run else ""))
+        for reason, n in pruned.counts.items():
+            print(f"  {n:>7}  {reason}")
+        verb = "would be removed" if pruned.dry_run else "removed"
+        print(f"  {pruned.total:>7}  total flagged; {pruned.deleted} {verb}")
 
     # Always after ingest, never as a registry entry: resolution has to see
     # every source's rows, and a registry entry would let INGESTERS order it

@@ -76,11 +76,15 @@ for what comes next.
 
 ```powershell
 uv sync                                       # install from uv.lock
-uv run pytest                                 # 377 tests, none touch the network
+uv run pytest                                 # 531 tests, none touch the network
 uv run python scripts/bootstrap.py            # init schema + run ingesters
 uv run python scripts/bootstrap.py --only anime_mal_csv --limit 100
 uv run python scripts/bootstrap.py --only anime_mal_ratings   # 19.2M ratings, ~75 s
 uv run python scripts/bootstrap.py --only manga_anilist        # 2nd domain, ~2 min
+uv run python scripts/bootstrap.py --only movie_tmdb --only tv_tmdb  # needs TMDB creds
+uv run python scripts/bootstrap.py --only book_goodbooks       # 10k books, ~4 s
+uv run python scripts/bootstrap.py --only music_musicbrainz    # composers, 1 req/s
+uv run python scripts/bootstrap.py --no-ingest --prune-dry-run # what filters reject
 uv run python app.py                          # native window (--browser, --no-ui)
 ```
 
@@ -117,6 +121,35 @@ indifferent to which kind they hold. Same three-step seam either way.
   list in `link.py` or `db.py` would mean editing them to add a source, which the
   invariant above forbids. `_richness()` prefers whichever row actually has a
   synopsis and more tags.
+
+- **Filter at the source, not after the fact.** Every row an ingester rejects
+  before requesting it is a request not made and a row not stored. Thresholds
+  belong in `config.py` and are set from *measured* distributions, not guessed:
+  `tmdb_min_votes=50` cut 22% of films, `tmdb_tv_min_votes=25` cut 53% of shows
+  because television's vote counts run an order of magnitude below film's.
+
+- **Never filter a catalog by age, language or country.** A vote threshold says
+  "nobody engaged with this" directly; a year cutoff only correlates with it and
+  throws out *Metropolis*, and a language filter mostly encodes a bias toward
+  English. `tests/test_prune.py` pins the old-but-well-rated case.
+
+- **`prune.py` is the only code here that deletes.** Everything else upserts;
+  `link.py` hides duplicates without touching them and `popularity.py` writes a
+  second opinion beside the source datum. Pruning never runs as part of a normal
+  bootstrap, defaults to a dry run, and reports before it acts. After it runs,
+  `links` and `popularity_norm` must be rebuilt -- they point at deleted rows.
+
+- **A paginated sweep is incomplete until it is partitioned.** AniList refuses
+  to page past 5,000 entries into any listing and TMDB stops at 500 pages, in
+  both cases silently as far as coverage goes. `partition_by_year` walks one
+  start-year at a time so no single listing is deep enough to hit the ceiling.
+
+- **Credentials live in `.env` and nowhere else.** TMDB is the only source
+  needing one. Prefer `TMDB_READ_TOKEN` (v4): it goes in an `Authorization`
+  header, so it never reaches a URL. A v3 `api_key` is a query parameter, and
+  `DiskCache` writes the string it is keyed on into every envelope -- so
+  `TmdbIngester._cache_key` strips it. Never put a real credential in
+  `.env.example`, a docstring, a log line, or a test.
 
 - **Migrations are append-only.** Add a new entry to `MIGRATIONS` in `db.py`;
   never edit a shipped one. `PRAGMA user_version` tracks what has been applied.

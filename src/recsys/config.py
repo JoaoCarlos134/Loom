@@ -69,8 +69,65 @@ class Settings(BaseSettings):
     anilist_rate_per_sec: float = 1.0
     anilist_rate_per_min: float = 30.0  # observed x-ratelimit-limit
     anilist_max_retries: int = 5
+    # Sweep filters. An anime nobody has on a list has no audience signal, no
+    # reliable score, and cannot be meaningfully recommended -- it is catalogue
+    # weight without catalogue value. 0 disables the floor.
+    anilist_min_popularity: int = 200
+    # Earliest start-year the partitioned sweep walks back to. Commercial anime
+    # begins in the 1910s but anything before this is a handful of shorts.
+    anilist_first_year: int = 1950
+
     # AniList tags are community-ranked 0-100; the long tail is weakly agreed.
     anilist_min_tag_rank: int = 60
+
+    # TMDB (movies / TV). Credentials are secrets and live only in .env.
+    # TMDB_READ_TOKEN is preferred: it goes in an Authorization header rather
+    # than a query string, so it never reaches a URL, a log or a cache file.
+    tmdb_read_token: str = ""
+    tmdb_api_key: str = ""
+    tmdb_base_url: str = "https://api.themoviedb.org/3"
+    tmdb_image_base: str = "https://image.tmdb.org/t/p/w500"
+    # 0 -> TMDB's own ceiling: /discover stops at 500 pages of 20.
+    tmdb_target_count: int = 10000
+    # Minimum votes for a title to be worth carrying. Measured on a first
+    # unfiltered pass: films below 50 votes were 22% of the catalog, shows
+    # below 25 were 53% -- television has a far longer obscure tail, so it
+    # takes its own floor rather than the film one.
+    tmdb_min_votes: int = 50
+    tmdb_tv_min_votes: int = 25
+    tmdb_rate_per_sec: float = 20.0
+    tmdb_rate_per_min: float = 0.0  # 0 disables the per-minute window
+    tmdb_max_retries: int = 5
+
+    # goodbooks-10k (books). Three small CSVs served from GitHub, no credential.
+    goodbooks_base_url: str = (
+        "https://raw.githubusercontent.com/zygmuntz/goodbooks-10k/master"
+    )
+    goodbooks_path: str = ""  # a local directory overrides the download
+    goodbooks_target_count: int = 0  # 0 = the whole file
+    # A shelf used by fewer readers than this is one person's filing habit.
+    goodbooks_min_tag_count: int = 50
+    goodbooks_max_tags: int = 20
+
+    # MusicBrainz + Deezer (music). Both keyless. The domain is driven by the
+    # composers credited in the film/TV catalog, so movie_tmdb / tv_tmdb run
+    # first. See music_musicbrainz.py for why it is not a general music dump.
+    musicbrainz_url: str = "https://musicbrainz.org/ws/2"
+    # MusicBrainz throttles clients whose User-Agent names no way to contact
+    # them. This goes into that header; point it at your own repo or email.
+    musicbrainz_contact: str = "https://github.com/JoaoCarlos134/Loom"
+    deezer_url: str = "https://api.deezer.com"
+    music_use_deezer: bool = True  # Deezer supplies the audience count
+    music_target_count: int = 0  # 0 = every credited composer
+    # MusicBrainz scores each candidate 0-100; below this a name match is a guess.
+    musicbrainz_min_score: int = 90
+    # MusicBrainz asks for at most one request a second. Do not raise this.
+    musicbrainz_rate_per_sec: float = 1.0
+    # 1/s is their stated ceiling and they throttle at it, so the sustained rate
+    # is held below it. Measured: at a flat 1/s, roughly one lookup in six came
+    # back 503.
+    musicbrainz_rate_per_min: float = 45.0
+    musicbrainz_max_retries: int = 8
 
     # MyAnimeList user ratings, from the same Kaggle archive as the anime
     # table. Rows read, not rows written: ~40% carry no score and are skipped.

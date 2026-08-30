@@ -68,6 +68,10 @@ Two sources feed the `anime` domain:
 | `anime_jikan` | Jikan v4, live API | up to 2000 items | 3 req/sec limiter |
 | `anime_anilist` | AniList GraphQL, live | ~12.8k items | ~10 min, 30 req/min, no API key |
 | `manga_anilist` | AniList GraphQL, live | ~3.3k items | ~2 min; a second domain |
+| `movie_tmdb` | TMDB, live | ~8k items | ~30 min; **needs a free API credential** |
+| `tv_tmdb` | TMDB, live | ~4k items | ~25 min; same credential |
+| `book_goodbooks` | goodbooks-10k, GitHub CSVs | 10k items | ~4 s, no credential |
+| `music_musicbrainz` | MusicBrainz + Deezer | ~5k artists | hours; MusicBrainz asks 1 req/s |
 | `anime_mal_ratings` | same Kaggle archive | 19.2M ratings | ~75 s, grows the DB to ~1.3 GB |
 
 `anime_mal_ratings` is **not** in the default `INGESTERS` list. It is a one-off
@@ -173,6 +177,7 @@ src/recsys/db.py          SQLite: items + items_fts (FTS5) + ratings + links
                                   + popularity_norm + ingest_runs
            link.py        entity resolution: which rows are one work
            popularity.py  one popularity scale across sources
+           prune.py       drop rows the ingest filters would reject
            schemas.py     UnifiedItem — the one row shape all domains collapse into
            config.py      pydantic-settings, the only reader of the environment
 
@@ -186,8 +191,13 @@ src/recsys/ingest/
   anime_jikan.py          Jikan v4 → UnifiedItem
   anime_mal_csv.py        Kaggle MAL CSV dump → UnifiedItem
   anilist.py              shared AniList client + mapper, used by both domains
+  tmdb.py                 shared TMDB client + mapper, used by movie and tv
   anime_anilist.py        AniList ANIME → UnifiedItem (the source with text)
   manga_anilist.py        AniList MANGA → UnifiedItem, via adaptation edges
+  movie_tmdb.py           TMDB film → UnifiedItem
+  tv_tmdb.py              TMDB television → UnifiedItem
+  book_goodbooks.py       goodbooks-10k CSVs → UnifiedItem
+  music_musicbrainz.py    composers the catalog credits → UnifiedItem
   ratings_mal_csv.py      Kaggle MAL user lists → ratings rows (a sibling
                           contract, not an Ingester — see below)
 ```

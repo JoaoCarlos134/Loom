@@ -13,14 +13,14 @@ desktop window and 266 tests, with the `anime` domain populated from two
 sources and a ratings matrix behind it.
 
 ```
-catalog        17,787 works      two domains, from 30,640 stored rows
+catalog        83,981 works      six domains, from 96,112 stored rows
   anime:anilist  12,837 rows     live GraphQL: synopses + ranked tags
   anime:mal      14,478 rows     Kaggle MAL dump, static 2018 snapshot
   anime:jikan        25 rows     live API, capped by the outage below
 manga:anilist   3,300 rows     the works those anime were adapted from
 synopsis coverage  80.0%         anime; 91% for manga
 ratings    19,172,125 ratings    106,402 users x 6,598 anime, scores 1-10
-tests             377            none touch the network or %LOCALAPPDATA%
+tests             531            none touch the network or %LOCALAPPDATA%
 ```
 
 No recommendation models yet, by design.
@@ -32,7 +32,9 @@ No recommendation models yet, by design.
 | Phase | Work | Plugs into | Status |
 |---|---|---|---|
 | **0** | Skeleton, schema, one domain end to end | — | **done** |
-| **1** | More domains: books, movies/TV, music | one file in `ingest/` + one line in `registry.py` | next |
+| **1** | More domains: books, movies/TV, music | `book_goodbooks`, `movie_tmdb`, `tv_tmdb`, `music_musicbrainz` | **done** |
+| **1** | Catalog quality filters | thresholds in `config.py`, `prune.py` | **done** |
+| **1** | Complete sweeps (partitioned) | `partition_by_year` in `anilist.py` | **done** |
 | **1** | Cross-source id linking | `external_ids` — already populated | ready |
 | **1** | Synopses + rich tags + adaptation edges | `anime_anilist` ingester, joins on `idMal` | **done** |
 | **1** | Manga domain | `manga_anilist.py` + one registry line | **done** |
@@ -49,6 +51,110 @@ No recommendation models yet, by design.
 | **4** | Implicit signals (views, dismissals) | new `events` table via a new migration | decide explicitly |
 | **4** | Similarity graph view | `/api/similar/…` + canvas renderer, reads the model's k-NN | — |
 | **4** | Region-aware availability | `REGION` setting — already threaded through | — |
+
+---
+
+## Done: all six domains, filtered
+
+Phase 1's headline item -- "more domains: books, movies/TV, music" -- is
+complete, and the catalog is four times the size it was while carrying less
+junk.
+
+```
+domain    works   synopsis   avg tags   creators
+manga    29,034       92%        6.9       100%
+anime    18,764       72%        7.5        91%
+book     10,000        0%       10.4       100%
+tv        9,968       98%        8.9        99%
+movie     9,659       99%       14.5       100%
+music     6,556        0%        2.2       100%
+         ------
+         83,981 works from 96,112 rows        2.02 GB
+```
+
+### Filters, set from measurement rather than taste
+
+Every filter is applied at the source, so a rejected row is a request never
+made. Thresholds came from the distributions of a first unfiltered pass:
+
+| Domain | Filter | What it removed |
+|---|---|---|
+| movie | `vote_count >= 50` | 2,128 (22%) -- p25 was 271 votes |
+| tv | `vote_count >= 25` | 4,369 (53%) -- median show had **28 votes** |
+| anime | `popularity > 200`, not adult, not `MUSIC` | 750 opening-theme clips filed as anime |
+| manga | `popularity > 200`, not adult | -- |
+| book | none | goodbooks-10k is pre-curated: every book has 10,443+ ratings |
+| music | scoped to credited composers | -- |
+
+**Television needed its own floor.** Its vote counts run an order of magnitude
+below film's, so the film threshold would have halved the domain for the wrong
+reason.
+
+**Nothing is filtered by age, language or country, deliberately.** A vote
+threshold states "nobody engaged with this" directly. A year cutoff only
+correlates with that and discards *Metropolis*; a language filter mostly encodes
+a bias toward English-language output. `tests/test_prune.py` pins the
+old-but-well-rated case so the rule cannot quietly erode.
+
+Filtering also made the catalog *bigger* where it counts: television rose from
+8,183 to 9,968 because `/discover` now spends its 500-page budget on titles that
+clear the bar instead of on the long tail.
+
+### Partitioning, which is what "complete" actually required
+
+AniList refuses to page past 5,000 entries into any listing and TMDB stops at
+500 pages -- in both cases silently, as far as coverage is concerned. A sweep
+that looks like it finished is simply truncated.
+
+Sweeping one start-year at a time keeps every listing shallow enough to finish,
+and the effect is not marginal:
+
+```
+manga   3,297  ->   7,627  ->  29,034
+        (adaptations)  (flat sweep)  (partitioned)
+
+anime dated 2019 or later:   120  ->  4,025
+```
+
+The anime domain had been frozen at 2018 for a structural reason, not a bug:
+`anime_anilist` was driven by MAL ids *from the 2018 Kaggle dump*, so it could
+only ever ask AniList about anime that dump already knew. No amount of re-running
+would have fixed it.
+
+### Pruning
+
+Filters stop rows being fetched; they do not reach rows already stored. So
+`prune.py` applies the same bars to what is on disk -- and it is **the only code
+in Loom that deletes anything**. It never runs as part of a normal bootstrap,
+defaults to a dry run, and reports before acting. It removed 7,247 rows on its
+first real pass; the catalog now reports zero flagged against its own filters.
+
+### What each source cost, and what it needed
+
+| Source | Credential | Rate | Notes |
+|---|---|---|---|
+| AniList | none | 30/min | Page depth capped at 5,000 |
+| TMDB | **free API key** | 20/s | One detail request per title, for keywords + credits + imdb_id |
+| goodbooks-10k | none | -- | Three CSVs from GitHub, ~5 MB |
+| MusicBrainz | none | 1/s | **Throttles clients whose User-Agent names no contact** |
+| Deezer | none | -- | Supplies the audience count MusicBrainz lacks |
+
+The MusicBrainz finding cost an hour: without a contact URL in the User-Agent,
+3 of 4 requests returned 503. With one, 4 of 4 succeeded. It was the whole
+failure, not a rate problem.
+
+### Gaps this leaves
+
+- **Books have no synopsis at all** (0%). goodbooks-10k carries none. Open
+  Library returned a description for 5 of 5 probed ISBNs plus curated subjects,
+  at two requests per book -- roughly 6 hours for 10,000, or less with modest
+  concurrency. This is the single largest remaining hole in the text bridge.
+- **Music has no text and thin tags** (2.2 average). MusicBrainz has no
+  biography. This is accepted rather than solved: music tags describe sound
+  while every other domain's describe story, so the domain earns its place
+  through the composer link, not through content similarity.
+- **Anime synopsis is 72%**, held down by the MAL rows that win the primary
+  election where AniList carries no entry.
 
 ---
 

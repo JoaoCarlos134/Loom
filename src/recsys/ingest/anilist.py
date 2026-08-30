@@ -23,7 +23,7 @@ import asyncio
 import hashlib
 import html
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, AsyncIterator, ClassVar, Iterator
 
 import httpx
@@ -44,16 +44,19 @@ SOURCE = "anilist"
 #: covers 50 works.
 MAX_PER_PAGE = 50
 
-#: The field list is identical for both media types -- ``Media`` is one GraphQL
-#: type. Only the filter and ``type:`` are substituted.
-_QUERY_TEMPLATE = """
-query ($ids: [Int], $perPage: Int) {
-  Page(page: 1, perPage: $perPage) {
-    media(%(id_field)s: $ids, type: %(media_type)s) {
+#: AniList refuses to page deeper than 5,000 entries into any sorted listing --
+#: "Page depth exceeds maximum allowed for API requests" as an HTTP 400, not a
+#: quiet empty page. The sweep stops itself rather than walking into it.
+MAX_BROWSE_ENTRIES = 5000
+
+#: The field list is identical for both media types and both fetch modes --
+#: ``Media`` is one GraphQL type.
+_FIELDS = """
       id
       idMal
       siteUrl
       format
+      isAdult
       seasonYear
       popularity
       averageScore
@@ -70,16 +73,63 @@ query ($ids: [Int], $perPage: Int) {
       relations {
         edges { relationType node { id idMal type format title { romaji } } }
       }
-    }
+"""
+
+#: Fetch by a known set of ids -- targeted, and how anime and the linked half of
+#: manga are collected.
+_BY_ID_TEMPLATE = (
+    """
+query ($ids: [Int], $perPage: Int) {
+  Page(page: 1, perPage: $perPage) {
+    media(%(id_field)s: $ids, type: %(media_type)s) {"""
+    + _FIELDS
+    + """}
   }
 }
 """
+)
+
+#: Sweep a sorted listing -- breadth, for a domain with no id list to work from.
+#:
+#: Filtered at the source rather than after the fact. Every row rejected here is
+#: a request not made, and the filters are what keep the sweep from importing
+#: things nobody could be recommended: pornography, music videos filed as anime,
+#: and works with an audience too small for their score to mean anything.
+#:
+#: ``$from``/``$to`` partition the sweep by start date. AniList refuses to page
+#: past 5,000 entries into any one listing, so an unpartitioned sweep can never
+#: be complete; a year at a time stays comfortably under that ceiling. Passing
+#: null for either simply drops the bound.
+_BROWSE_TEMPLATE = (
+    """
+query ($page: Int, $perPage: Int, $from: FuzzyDateInt, $to: FuzzyDateInt,
+       $minPopularity: Int) {
+  Page(page: $page, perPage: $perPage) {
+    pageInfo { hasNextPage }
+    media(type: %(media_type)s, sort: %(sort)s, isAdult: false,
+          popularity_greater: $minPopularity,
+          startDate_greater: $from, startDate_lesser: $to%(extra)s) {"""
+    + _FIELDS
+    + """}
+  }
+}
+"""
+)
 
 
 def build_query(*, id_field: str, media_type: str) -> str:
-    """Substitute the two things that vary. Both are class constants, never
-    user input, so this cannot become an injection vector."""
-    return _QUERY_TEMPLATE % {"id_field": id_field, "media_type": media_type}
+    """Substitute the things that vary. All are class constants, never user
+    input, so this cannot become an injection vector."""
+    return _BY_ID_TEMPLATE % {"id_field": id_field, "media_type": media_type}
+
+
+def build_browse_query(
+    *, media_type: str, sort: str, exclude_formats: tuple[str, ...] = ()
+) -> str:
+    extra = (
+        f", format_not_in: [{', '.join(exclude_formats)}]" if exclude_formats else ""
+    )
+    return _BROWSE_TEMPLATE % {"media_type": media_type, "sort": sort, "extra": extra}
 
 
 # Descriptions arrive with light HTML even at asHtml:false, and often end with a
@@ -249,9 +299,19 @@ def map_anilist_media(
     *,
     fetched_at: datetime | None = None,
     min_tag_rank: int = 60,
+    exclude_formats: tuple[str, ...] = (),
 ) -> UnifiedItem | None:
     """Map one AniList media record to a UnifiedItem. None = unusable, skip it."""
     if not isinstance(raw, dict) or raw.get("id") is None:
+        return None
+
+    # Rejected whatever phase produced them. The sweep filters these at the
+    # source, but the id-driven phase asks for specific ids and gets whatever
+    # they are -- an adaptation edge can point at pornography, and a relation
+    # can point at an opening-theme music video.
+    if raw.get("isAdult"):
+        return None
+    if exclude_formats and raw.get("format") in exclude_formats:
         return None
 
     canonical, alt_titles = _titles(raw)
@@ -309,6 +369,15 @@ class AniListIngester(Ingester):
     media_type: ClassVar[str]
     #: Which AniList filter the ids are passed to -- "idMal_in" or "id_in".
     id_field: ClassVar[str]
+    #: Set to a sort ("POPULARITY_DESC") to sweep the catalogue for breadth
+    #: after the id-driven phase. Left None, only known ids are fetched.
+    browse_sort: ClassVar[str | None] = None
+    #: Formats that are not works. Anime lists music videos as MUSIC; importing
+    #: 750 opening-theme clips as if they were series is pure noise.
+    exclude_formats: ClassVar[tuple[str, ...]] = ()
+    #: Sweep one start-year at a time. AniList refuses to page past 5,000
+    #: entries into a listing, so an unpartitioned sweep cannot be complete.
+    partition_by_year: ClassVar[bool] = False
 
     def __init__(self, settings: Settings) -> None:
         super().__init__(settings)
@@ -320,6 +389,17 @@ class AniListIngester(Ingester):
         self.limiter = RateLimiter(settings.anilist_rate_per_sec, settings.anilist_rate_per_min)
         self.cache = DiskCache(settings.cache_dir, SOURCE, settings.http_cache_ttl_days)
         self.query = build_query(id_field=self.id_field, media_type=self.media_type)
+        self.min_popularity = settings.anilist_min_popularity
+        self.first_year = settings.anilist_first_year
+        self.browse_query = (
+            build_browse_query(
+                media_type=self.media_type,
+                sort=self.browse_sort,
+                exclude_formats=self.exclude_formats,
+            )
+            if self.browse_sort
+            else None
+        )
         # Cached responses are only valid for the query that produced them.
         # Without this, adding a field to the query returns payloads that
         # silently lack it until the 30-day TTL expires -- which is exactly
@@ -373,13 +453,26 @@ class AniListIngester(Ingester):
             f"{self.url}#{self.media_type}#{self.query_fingerprint}"
             f"#{','.join(str(i) for i in sorted(ids))}"
         )
+        body = await self._post(
+            self.query, {"ids": ids, "perPage": self.per_page}, cache_key
+        )
+        return ((body.get("data") or {}).get("Page") or {}).get("media") or []
+
+    async def _post(
+        self, query: str, variables: dict[str, Any], cache_key: str
+    ) -> dict[str, Any]:
+        """POST one GraphQL query, with the cache, the limiter and the retries.
+
+        Returns the whole response body rather than just the media list, because
+        the sweep needs ``pageInfo`` from it too.
+        """
         cached = self.cache.get(cache_key)
         if cached is not None:
             self.n_cached += 1
             return cached
 
         client = self._get_client()
-        payload = {"query": self.query, "variables": {"ids": ids, "perPage": self.per_page}}
+        payload = {"query": query, "variables": variables}
         last_error = "unknown"
 
         for attempt in range(self.max_retries):
@@ -420,41 +513,141 @@ class AniListIngester(Ingester):
                 if not (body.get("data") or {}).get("Page"):
                     raise RuntimeError(f"AniList query failed: {messages}")
 
-            media = ((body.get("data") or {}).get("Page") or {}).get("media") or []
-            self.cache.set(cache_key, media)
-            return media
+            self.cache.set(cache_key, body)
+            return body
 
         raise RuntimeError(
             f"AniList request failed after {self.max_retries} attempts ({last_error})"
         )
 
+    def _partitions(self) -> list[tuple[str, int | None, int | None]]:
+        """(label, from, to) windows to sweep, as FuzzyDateInt bounds.
+
+        One window per start-year when partitioning, so no single listing is
+        deep enough to hit AniList's 5,000-entry paging ceiling. Unpartitioned,
+        a single unbounded window -- which is correct for a catalogue small
+        enough to fit under the cap, and silently incomplete for one that is not.
+        """
+        if not self.partition_by_year:
+            return [("all", None, None)]
+
+        end = datetime.now(timezone.utc).year + 2
+        return [
+            (str(year), year * 10000, (year + 1) * 10000)
+            for year in range(self.first_year, end)
+        ]
+
+    async def _browse_page(
+        self, page: int, window: tuple[str, int | None, int | None]
+    ) -> tuple[list[dict[str, Any]], bool]:
+        """One page of the sorted sweep, plus whether another follows."""
+        assert self.browse_query is not None
+        label, start, end = window
+        cache_key = (
+            f"{self.url}#{self.media_type}#{self.query_fingerprint}"
+            f"#browse:{self.browse_sort}:{self.min_popularity}:{label}:{page}"
+        )
+        body = await self._post(
+            self.browse_query,
+            {
+                "page": page,
+                "perPage": self.per_page,
+                "from": start,
+                "to": end,
+                "minPopularity": self.min_popularity or None,
+            },
+            cache_key,
+        )
+        block = ((body.get("data") or {}).get("Page")) or {}
+        media = block.get("media") or []
+        has_next = bool((block.get("pageInfo") or {}).get("hasNextPage"))
+        return media, has_next
+
     # ---- Ingester contract ------------------------------------------------
 
     async def fetch(self) -> AsyncIterator[dict[str, Any]]:
+        """Known ids first, then a sorted sweep for breadth if one is configured.
+
+        Two phases because they answer different questions. The id phase gets
+        the works the rest of the catalog already points at -- for manga, the
+        ones an anime was adapted from, which is what makes them valuable. The
+        sweep then fills in the rest of the medium, which the id phase cannot
+        reach by construction: a manga nobody adapted has no edge pointing at
+        it, and most manga were never adapted.
+        """
         self._fetched_at = utcnow()
+        seen: set[int] = set()
+        limit = self.target_count or 0
+
+        def take(record: dict[str, Any]) -> bool:
+            """Whether this record is new. The two phases overlap heavily --
+            popular manga are usually the adapted ones."""
+            media_id = record.get("id")
+            if not isinstance(media_id, int) or media_id in seen:
+                return False
+            seen.add(media_id)
+            return True
 
         ids = self.ids_to_fetch()
-        if not ids:
+        if ids:
+            batches = (len(ids) + self.per_page - 1) // self.per_page
+            log.info("%s: %d ids in %d batches of %d",
+                     self.name, len(ids), batches, self.per_page)
+            for n, batch in enumerate(_batched(ids, self.per_page), start=1):
+                # AniList silently omits ids it does not carry; a normal miss.
+                for record in await self._post_batch(batch):
+                    if take(record):
+                        yield record
+                        if limit and len(seen) >= limit:
+                            log.info("%s: reached the target of %d", self.name, limit)
+                            return
+                if n % 20 == 0 or n == batches:
+                    log.info("%s: batch %d/%d, %d records (%d cache hits)",
+                             self.name, n, batches, len(seen), self.cache.hits)
+            log.info("%s: %d records from %d requested ids", self.name, len(seen), len(ids))
+        elif self.browse_query is None:
             log.warning("%s: nothing to fetch -- see this ingester's docstring for "
                         "what has to run before it", self.name)
             return
 
-        batches = (len(ids) + self.per_page - 1) // self.per_page
-        log.info("%s: %d ids in %d batches of %d", self.name, len(ids), batches, self.per_page)
+        if self.browse_query is None:
+            return
 
-        yielded = 0
-        for n, batch in enumerate(_batched(ids, self.per_page), start=1):
-            media = await self._post_batch(batch)
-            # AniList silently omits ids it does not carry; that is a normal
-            # miss, not an error.
-            for record in media:
-                yield record
-                yielded += 1
-            if n % 20 == 0 or n == batches:
-                log.info("%s: batch %d/%d, %d records (%d cache hits)",
-                         self.name, n, batches, yielded, self.cache.hits)
+        linked = len(seen)
+        windows = self._partitions()
+        log.info("%s: sweeping %d window(s), popularity > %s",
+                 self.name, len(windows), self.min_popularity or "any")
 
-        log.info("%s: fetched %d records for %d requested ids", self.name, yielded, len(ids))
+        for window in windows:
+            label = window[0]
+            before = len(seen)
+            page = 1
+            while True:
+                media, has_next = await self._browse_page(page, window)
+                if not media:
+                    break
+                for record in media:
+                    if take(record):
+                        yield record
+                        if limit and len(seen) >= limit:
+                            log.info("%s: reached the target of %d", self.name, limit)
+                            return
+                if not has_next:
+                    break
+                if (page + 1) * self.per_page > MAX_BROWSE_ENTRIES:
+                    # Only reachable when a single window is itself too big --
+                    # the partitioning exists to keep this from happening.
+                    log.warning(
+                        "%s: window %s hit AniList's %d-entry ceiling; it needs a "
+                        "finer partition than one year", self.name, label, MAX_BROWSE_ENTRIES
+                    )
+                    break
+                page += 1
+            if len(seen) > before:
+                log.info("%s: window %s added %d", self.name, label, len(seen) - before)
+
+        log.info("%s: %d linked + %d swept = %d total",
+                 self.name, linked, len(seen) - linked, len(seen))
 
     def map_item(self, raw: dict[str, Any]) -> UnifiedItem | None:
         return map_anilist_media(
@@ -462,4 +655,5 @@ class AniListIngester(Ingester):
             self.domain,
             fetched_at=getattr(self, "_fetched_at", None),
             min_tag_rank=self.min_tag_rank,
+            exclude_formats=self.exclude_formats,
         )

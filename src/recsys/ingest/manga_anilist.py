@@ -22,8 +22,17 @@ it the reference case for judging whether the content bridge works at all: if a
 model cannot connect an anime to the manga it was literally adapted from, the
 tag-and-text approach is not going to connect it to an unrelated novel either.
 
-**Runs after ``anime_anilist``**, since that is what leaves the edges behind.
-With no anime rows carrying relations it fetches nothing and says so.
+**Two phases.** The adaptation edges come first and are the valuable half. But
+they reach only manga that *were* adapted, which is a small and self-selecting
+slice: most manga never become anime, and nothing in the catalog points at
+those. So a ``POPULARITY_DESC`` sweep follows, adding the rest of the medium up
+to AniList's paging ceiling. The two overlap heavily -- popular manga are
+usually the adapted ones -- and the second phase skips anything the first
+already returned.
+
+**Runs after ``anime_anilist``**, which is what leaves the edges behind. Without
+them the sweep still works, so the domain degrades to breadth-only rather than
+failing.
 
 Two consequences worth knowing:
 
@@ -58,6 +67,13 @@ class AniListMangaIngester(AniListIngester):
     # directly. Anime is driven by MAL ids only because the existing catalog
     # was already keyed on them.
     id_field = "id_in"
+    # Then swept for breadth. The adaptation edges reach only manga that were
+    # adapted, which is a small and self-selecting slice of the medium -- most
+    # manga were never made into anime, and nothing points at those.
+    browse_sort = "POPULARITY_DESC"
+    # Same ceiling, same fix as anime: a year at a time reaches the whole
+    # medium rather than its first 5,000 titles.
+    partition_by_year = True
 
     def ids_to_fetch(self) -> list[int]:
         """AniList ids of the manga our anime were adapted from.

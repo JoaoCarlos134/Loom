@@ -1,0 +1,1633 @@
+[
+ {
+  "adult": false,
+  "backdrop_path": "/tsRy63Mu5cu8etL1X7ZLyf7UP1M.jpg",
+  "created_by": [
+   {
+    "id": 66633,
+    "credit_id": "52542286760ee31328001a7b",
+    "name": "Vince Gilligan",
+    "original_name": "Vince Gilligan",
+    "gender": 2,
+    "profile_path": "/wJIxATESjzsjSgvRhVavOmdamXc.jpg"
+   }
+  ],
+  "episode_run_time": [],
+  "first_air_date": "2008-01-20",
+  "genres": [
+   {
+    "id": 18,
+    "name": "Drama"
+   },
+   {
+    "id": 80,
+    "name": "Crime"
+   }
+  ],
+  "homepage": "https://www.sonypictures.com/tv/breakingbad",
+  "id": 1396,
+  "in_production": false,
+  "languages": [
+   "en",
+   "de",
+   "es"
+  ],
+  "last_air_date": "2013-09-29",
+  "last_episode_to_air": {
+   "id": 62161,
+   "name": "Felina",
+   "overview": "All bad things must come to an end.",
+   "vote_average": 9.282,
+   "vote_count": 312,
+   "air_date": "2013-09-29",
+   "episode_number": 16,
+   "episode_type": "finale",
+   "production_code": "",
+   "runtime": 56,
+   "season_number": 5,
+   "show_id": 1396,
+   "still_path": "/pA0YwyhvdDXP3BEGL2grrIhq8aM.jpg"
+  },
+  "name": "Breaking Bad",
+  "next_episode_to_air": null,
+  "networks": [
+   {
+    "id": 174,
+    "logo_path": "/pmvRmATOCaDykE6JrVoeYxlFHw3.png",
+    "name": "AMC",
+    "origin_country": "US"
+   }
+  ],
+  "number_of_episodes": 62,
+  "number_of_seasons": 5,
+  "origin_country": [
+   "US"
+  ],
+  "original_language": "en",
+  "original_name": "Breaking Bad",
+  "overview": "Walter White, a New Mexico chemistry teacher, is diagnosed with Stage III cancer and given a prognosis of only two years left to live. He becomes filled with a sense of fearlessness and an unrelenting desire to secure his family's financial future at any cost as he enters the dangerous world of drugs and crime.",
+  "popularity": 165.1607,
+  "poster_path": "/anFx9aTOOYqgS3v7x3R84Kz67ly.jpg",
+  "production_companies": [
+   {
+    "id": 11073,
+    "logo_path": "/wHs44fktdoj6c378ZbSWfzKsM2Z.png",
+    "name": "Sony Pictures Television",
+    "origin_country": "US"
+   },
+   {
+    "id": 33742,
+    "logo_path": "/2jdh2sEa0R6y6uT0F7g0IgA2WO8.png",
+    "name": "High Bridge Productions",
+    "origin_country": "US"
+   },
+   {
+    "id": 2605,
+    "logo_path": null,
+    "name": "Gran Via Productions",
+    "origin_country": "US"
+   }
+  ],
+  "production_countries": [
+   {
+    "iso_3166_1": "US",
+    "name": "United States of America"
+   }
+  ],
+  "seasons": [
+   {
+    "air_date": "2009-02-17",
+    "episode_count": 9,
+    "id": 3577,
+    "name": "Specials",
+    "overview": "",
+    "poster_path": "/4RaIvSQgHHHPfaI1jFqaMR8UJWM.jpg",
+    "season_number": 0,
+    "vote_average": 0.0
+   },
+   {
+    "air_date": "2008-01-20",
+    "episode_count": 7,
+    "id": 3572,
+    "name": "Season 1",
+    "overview": "High school chemistry teacher Walter White's life is suddenly transformed by a dire medical diagnosis. Street-savvy former student Jesse Pinkman \"teaches\" Walter a new trade.",
+    "poster_path": "/1BP4xYv9ZG4ZVHkL7ocOziBbSYH.jpg",
+    "season_number": 1,
+    "vote_average": 8.3
+   },
+   {
+    "air_date": "2009-03-08",
+    "episode_count": 13,
+    "id": 3573,
+    "name": "Season 2",
+    "overview": "Walt must deal with the chain reaction of his choice, as he and Jesse face new and severe consequences. When danger and suspicion around Walt escalate, he is pushed to new levels of desperation. Just how much higher will the stakes rise? How far is Walt willing to go to ensure his family's security? Will his grand plan spiral out of control?",
+    "poster_path": "/e3oGYpoTUhOFK0BJfloru5ZmGV.jpg",
+    "season_number": 2,
+    "vote_average": 8.4
+   },
+   {
+    "air_date": "2010-03-21",
+    "episode_count": 13,
+    "id": 3575,
+    "name": "Season 3",
+    "overview": "Walt continues to battle dueling identities: a desperate husband and father trying to provide for his family, and a newly appointed key player in the Albuquerque drug trade. As the danger around him escalates, Walt is now entrenched in the complex worlds of an angst-ridden family on the verge of dissolution, and the ruthless and unrelenting drug cartel.",
+    "poster_path": "/ffP8Q8ew048YofHRnFVM18B2fPG.jpg",
+    "season_number": 3,
+    "vote_average": 8.4
+   },
+   {
+    "air_date": "2011-07-17",
+    "episode_count": 13,
+    "id": 3576,
+    "name": "Season 4",
+    "overview": "Walt and Jesse must cope with the fallout of their previous actions, both personally and professionally. Tension mounts as Walt faces a true standoff with his employer, Gus, with neither side willing or able to back down. Walt must also adjust to a new relationship with Skyler, whom while still reconciling her relationship with Walt, is committed to properly laundering Walt’s money and ensuring her sister Marie and an ailing Hank are financially stable.",
+    "poster_path": "/5ewrnKp4TboU4hTLT5cWO350mHj.jpg",
+    "season_number": 4,
+    "vote_average": 8.6
+   },
+   {
+    "air_date": "2012-07-15",
+    "episode_count": 16,
+    "id": 3578,
+    "name": "Season 5",
+    "overview": "Walt is faced with the prospect of moving on in a world without his enemy. As the pressure of a criminal life starts to build, Skyler struggles to keep Walt’s terrible secrets. Facing resistance from sometime adversary and former Fring lieutenant Mike, Walt tries to keep his world from falling apart even as his DEA Agent brother in law, Hank, finds numerous leads that could blaze a path straight to Walt. ",
+    "poster_path": "/r3z70vunihrAkjILQKWHX0G2xzO.jpg",
+    "season_number": 5,
+    "vote_average": 8.9
+   }
+  ],
+  "softcore": false,
+  "spoken_languages": [
+   {
+    "english_name": "English",
+    "iso_639_1": "en",
+    "name": "English"
+   },
+   {
+    "english_name": "German",
+    "iso_639_1": "de",
+    "name": "Deutsch"
+   },
+   {
+    "english_name": "Spanish",
+    "iso_639_1": "es",
+    "name": "Español"
+   }
+  ],
+  "status": "Ended",
+  "tagline": "Change the equation.",
+  "type": "Scripted",
+  "vote_average": 8.949,
+  "vote_count": 18488,
+  "external_ids": {
+   "imdb_id": "tt0903747",
+   "freebase_mid": "/m/03d34x8",
+   "freebase_id": "/en/breaking_bad",
+   "tvdb_id": 81189,
+   "tvrage_id": 18164,
+   "wikidata_id": "Q1079",
+   "facebook_id": "BreakingBad",
+   "instagram_id": "breakingbad",
+   "twitter_id": "BreakingBad"
+  },
+  "keywords": {
+   "results": [
+    {
+     "name": "new mexico",
+     "id": 1508
+    },
+    {
+     "name": "drug dealer",
+     "id": 2231
+    },
+    {
+     "name": "narcissism",
+     "id": 5857
+    },
+    {
+     "name": "psychopath",
+     "id": 6259
+    },
+    {
+     "name": "terminal illness",
+     "id": 6564
+    },
+    {
+     "name": "outlaw",
+     "id": 9503
+    },
+    {
+     "name": "dark comedy",
+     "id": 10123
+    },
+    {
+     "name": "cancer",
+     "id": 10163
+    },
+    {
+     "name": "tragedy",
+     "id": 10614
+    },
+    {
+     "name": "drugs",
+     "id": 14964
+    },
+    {
+     "name": "criminal",
+     "id": 15009
+    },
+    {
+     "name": "meth lab",
+     "id": 15484
+    },
+    {
+     "name": "drug lord",
+     "id": 18026
+    },
+    {
+     "name": "high school teacher",
+     "id": 41525
+    },
+    {
+     "name": "dea agent",
+     "id": 156805
+    },
+    {
+     "name": "neo-western",
+     "id": 168713
+    },
+    {
+     "name": "albuquerque, new mexico",
+     "id": 191005
+    },
+    {
+     "name": "criminal lawyer",
+     "id": 191199
+    },
+    {
+     "name": "fall from grace",
+     "id": 199660
+    },
+    {
+     "name": "cartel",
+     "id": 206594
+    },
+    {
+     "name": "mexican cartel",
+     "id": 217064
+    },
+    {
+     "name": "male egos",
+     "id": 217104
+    },
+    {
+     "name": "crystal meth",
+     "id": 239108
+    },
+    {
+     "name": "complex",
+     "id": 239797
+    },
+    {
+     "name": "dark",
+     "id": 259094
+    },
+    {
+     "name": "methamphetamine",
+     "id": 281692
+    },
+    {
+     "name": "thriller",
+     "id": 316362
+    },
+    {
+     "name": "violent",
+     "id": 342828
+    },
+    {
+     "name": "tortured genius",
+     "id": 360934
+    }
+   ]
+  },
+  "credits": {
+   "cast": [
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 17419,
+     "known_for_department": "Acting",
+     "name": "Bryan Cranston",
+     "original_name": "Bryan Cranston",
+     "popularity": 5.4681,
+     "profile_path": "/npIIZJGSrcJIJ6yHdmbqO6Jzo5I.jpg",
+     "character": "Walter White",
+     "credit_id": "52542282760ee313280017f9",
+     "order": 0
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 84497,
+     "known_for_department": "Acting",
+     "name": "Aaron Paul",
+     "original_name": "Aaron Paul",
+     "popularity": 3.7009,
+     "profile_path": "/8Ac9uuoYwZoYVAIJfRLzzLsGGJn.jpg",
+     "character": "Jesse Pinkman",
+     "credit_id": "52542282760ee31328001845",
+     "order": 1
+    },
+    {
+     "adult": false,
+     "gender": 1,
+     "id": 134531,
+     "known_for_department": "Acting",
+     "name": "Anna Gunn",
+     "original_name": "Anna Gunn",
+     "popularity": 3.1668,
+     "profile_path": "/adppyeu1a4REN3khtgmXusrapFi.jpg",
+     "character": "Skyler White",
+     "credit_id": "52542282760ee3132800181b",
+     "order": 2
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 209674,
+     "known_for_department": "Acting",
+     "name": "RJ Mitte",
+     "original_name": "RJ Mitte",
+     "popularity": 2.0866,
+     "profile_path": "/sNPA92ZrssYhlaB1UA2pWcLD9db.jpg",
+     "character": "Walter White Jr.",
+     "credit_id": "52542284760ee313280018a9",
+     "order": 3
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 14329,
+     "known_for_department": "Acting",
+     "name": "Dean Norris",
+     "original_name": "Dean Norris",
+     "popularity": 3.8246,
+     "profile_path": "/mKRrEbsxAX3ro700HsViFArRM7l.jpg",
+     "character": "Hank Schrader",
+     "credit_id": "52542283760ee3132800187b",
+     "order": 4
+    },
+    {
+     "adult": false,
+     "gender": 1,
+     "id": 1217934,
+     "known_for_department": "Acting",
+     "name": "Betsy Brandt",
+     "original_name": "Betsy Brandt",
+     "popularity": 4.5372,
+     "profile_path": "/xAnuzyjdMbQq9L1c4JNwXL52Wm4.jpg",
+     "character": "Marie Schrader",
+     "credit_id": "52542283760ee31328001891",
+     "order": 5
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 59410,
+     "known_for_department": "Acting",
+     "name": "Bob Odenkirk",
+     "original_name": "Bob Odenkirk",
+     "popularity": 7.4375,
+     "profile_path": "/rF0Lb6SBhGSTvjRffmlKRSeI3jE.jpg",
+     "character": "Saul Goodman",
+     "credit_id": "5271b180760ee35afc09bb8d",
+     "order": 7
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 783,
+     "known_for_department": "Acting",
+     "name": "Jonathan Banks",
+     "original_name": "Jonathan Banks",
+     "popularity": 5.1895,
+     "profile_path": "/bswk26L13PvY4iMTwUTAsepXCLv.jpg",
+     "character": "Mike Ehrmantraut",
+     "credit_id": "5271b1e6760ee35af60941ad",
+     "order": 9
+    }
+   ],
+   "crew": [
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 24951,
+     "known_for_department": "Production",
+     "name": "Peter Gould",
+     "original_name": "Peter Gould",
+     "popularity": 1.5862,
+     "profile_path": "/a2dJSpUiXQ2NAxqSzztr6WsnhOJ.jpg",
+     "credit_id": "67ac7225f85f19913a9b8a2d",
+     "department": "Production",
+     "job": "Co-Executive Producer"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 103009,
+     "known_for_department": "Writing",
+     "name": "Thomas Schnauz",
+     "original_name": "Thomas Schnauz",
+     "popularity": 1.326,
+     "profile_path": "/uMz5wsgv6QQAgFI809SgCCbwYn9.jpg",
+     "credit_id": "67ac7024f71a3783e1bb4ea5",
+     "department": "Production",
+     "job": "Co-Executive Producer"
+    },
+    {
+     "adult": false,
+     "gender": 1,
+     "id": 1537674,
+     "known_for_department": "Costume & Make-Up",
+     "name": "Jennifer Bryan",
+     "original_name": "Jennifer Bryan",
+     "popularity": 0.5221,
+     "profile_path": "/oA5QovyVfEG0SUIs0DIhGsriyok.jpg",
+     "credit_id": "6418a1a7a14bef00b815158a",
+     "department": "Costume & Make-Up",
+     "job": "Costume Design"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 1223193,
+     "known_for_department": "Writing",
+     "name": "George Mastras",
+     "original_name": "George Mastras",
+     "popularity": 0.7201,
+     "profile_path": "/2K0NELbA0Ow45ECudbO2eFc1Fe4.jpg",
+     "credit_id": "64189e9c6a2227008de8d158",
+     "department": "Production",
+     "job": "Co-Executive Producer"
+    },
+    {
+     "adult": false,
+     "gender": 1,
+     "id": 1223202,
+     "known_for_department": "Production",
+     "name": "Diane Mercer",
+     "original_name": "Diane Mercer",
+     "popularity": 0.8764,
+     "profile_path": null,
+     "credit_id": "67ac74429ed73a4324b0952e",
+     "department": "Production",
+     "job": "Producer"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 17419,
+     "known_for_department": "Acting",
+     "name": "Bryan Cranston",
+     "original_name": "Bryan Cranston",
+     "popularity": 5.4681,
+     "profile_path": "/npIIZJGSrcJIJ6yHdmbqO6Jzo5I.jpg",
+     "credit_id": "5254228d760ee31328001cc7",
+     "department": "Production",
+     "job": "Producer"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 1930718,
+     "known_for_department": "Production",
+     "name": "Christian Diaz de Bedoya",
+     "original_name": "Christian Diaz de Bedoya",
+     "popularity": 0.6115,
+     "profile_path": null,
+     "credit_id": "6449841d05a53304be1b880d",
+     "department": "Production",
+     "job": "Location Manager"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 3970747,
+     "known_for_department": "Production",
+     "name": "Andrew Ortner",
+     "original_name": "Andrew Ortner",
+     "popularity": 0.3751,
+     "profile_path": null,
+     "credit_id": "64189f7aa14bef0099c8395a",
+     "department": "Production",
+     "job": "Associate Producer"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 1223194,
+     "known_for_department": "Writing",
+     "name": "Sam Catlin",
+     "original_name": "Sam Catlin",
+     "popularity": 1.0705,
+     "profile_path": "/xc9Ax2kpvQLayUaFL1d1NTUQ7df.jpg",
+     "credit_id": "64189e12a14bef00b81514a9",
+     "department": "Production",
+     "job": "Co-Executive Producer"
+    },
+    {
+     "adult": false,
+     "gender": 1,
+     "id": 29779,
+     "known_for_department": "Directing",
+     "name": "Michelle MacLaren",
+     "original_name": "Michelle MacLaren",
+     "popularity": 1.236,
+     "profile_path": "/3LcH5eNiysMWaepARllVrS4Dzn7.jpg",
+     "credit_id": "64189e5f6a2227008de8d147",
+     "department": "Production",
+     "job": "Executive Producer"
+    },
+    {
+     "adult": false,
+     "gender": 1,
+     "id": 1223199,
+     "known_for_department": "Production",
+     "name": "Melissa Bernstein",
+     "original_name": "Melissa Bernstein",
+     "popularity": 1.3506,
+     "profile_path": "/rSztwqMUIko8RkmwjxBse1XDW3g.jpg",
+     "credit_id": "64189dcea14bef008100712b",
+     "department": "Production",
+     "job": "Co-Executive Producer"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 12706,
+     "known_for_department": "Art",
+     "name": "Mark S. Freeborn",
+     "original_name": "Mark S. Freeborn",
+     "popularity": 0.5857,
+     "profile_path": null,
+     "credit_id": "539980a1c3a3681d0d00148b",
+     "department": "Art",
+     "job": "Production Design"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 4065202,
+     "known_for_department": "Crew",
+     "name": "Richard J. Berry",
+     "original_name": "Richard J. Berry",
+     "popularity": 0.4161,
+     "profile_path": null,
+     "credit_id": "64634c54ef8b3200fe7e825f",
+     "department": "Crew",
+     "job": "Thanks"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 1494529,
+     "known_for_department": "Art",
+     "name": "Mark Hansen",
+     "original_name": "Mark Hansen",
+     "popularity": 0.4207,
+     "profile_path": null,
+     "credit_id": "690e575cdc4f028746a0bd66",
+     "department": "Art",
+     "job": "Property Master"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 1537675,
+     "known_for_department": "Production",
+     "name": "Russell Scott",
+     "original_name": "Russell Scott",
+     "popularity": 0.8208,
+     "profile_path": null,
+     "credit_id": "644465ffd38b580521114ec4",
+     "department": "Production",
+     "job": "Casting Associate"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 1223200,
+     "known_for_department": "Production",
+     "name": "Stewart Lyons",
+     "original_name": "Stewart Lyons",
+     "popularity": 0.957,
+     "profile_path": "/dCAN4EMn8rsqALwDIjf9aNjuVTm.jpg",
+     "credit_id": "64189d12310325010151b7b7",
+     "department": "Production",
+     "job": "Producer"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 1330079,
+     "known_for_department": "Art",
+     "name": "Bjarne Sletteland",
+     "original_name": "Bjarne Sletteland",
+     "popularity": 0.4571,
+     "profile_path": null,
+     "credit_id": "539980c8c3a3681d0700143a",
+     "department": "Art",
+     "job": "Art Direction"
+    },
+    {
+     "adult": false,
+     "gender": 1,
+     "id": 6479,
+     "known_for_department": "Production",
+     "name": "Sharon Bialy",
+     "original_name": "Sharon Bialy",
+     "popularity": 1.1529,
+     "profile_path": "/uOex6LpaQYncD0sQfVYD1frI5uJ.jpg",
+     "credit_id": "6444663ccee2f6049f36d7d3",
+     "department": "Production",
+     "job": "Casting"
+    },
+    {
+     "adult": false,
+     "gender": 1,
+     "id": 959387,
+     "known_for_department": "Production",
+     "name": "Sherry Thomas",
+     "original_name": "Sherry Thomas",
+     "popularity": 1.0231,
+     "profile_path": null,
+     "credit_id": "64446643cee2f604f336e877",
+     "department": "Production",
+     "job": "Casting"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 1069688,
+     "known_for_department": "Sound",
+     "name": "Thomas Golubić",
+     "original_name": "Thomas Golubić",
+     "popularity": 0.57,
+     "profile_path": "/umzkpmX3p3GdrSutAHFX7Rij0Sm.jpg",
+     "credit_id": "64634e45e3fa2f00e404a628",
+     "department": "Sound",
+     "job": "Music Supervisor"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 1537682,
+     "known_for_department": "Sound",
+     "name": "Nick Forshager",
+     "original_name": "Nick Forshager",
+     "popularity": 0.6687,
+     "profile_path": null,
+     "credit_id": "644986702fdec604e4a1236a",
+     "department": "Sound",
+     "job": "Supervising Sound Editor"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 1537690,
+     "known_for_department": "Crew",
+     "name": "Al Goto",
+     "original_name": "Al Goto",
+     "popularity": 1.0989,
+     "profile_path": "/iH29BHKpmUO3iSKuhBSuj365VPl.jpg",
+     "credit_id": "6450485343501100ea397cba",
+     "department": "Crew",
+     "job": "Stunt Coordinator"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 1280070,
+     "known_for_department": "Sound",
+     "name": "Dave Porter",
+     "original_name": "Dave Porter",
+     "popularity": 0.832,
+     "profile_path": "/flRW9QknVtU8HG7lLjMvflbhl2a.jpg",
+     "credit_id": "52b7008819c29559eb03dd72",
+     "department": "Sound",
+     "job": "Original Music Composer"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 5162,
+     "known_for_department": "Production",
+     "name": "Mark Johnson",
+     "original_name": "Mark Johnson",
+     "popularity": 1.2839,
+     "profile_path": "/gLuXkOQjqB81aHMGJ2OtYzEpHQu.jpg",
+     "credit_id": "52542287760ee31328001b69",
+     "department": "Production",
+     "job": "Executive Producer"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 1440228,
+     "known_for_department": "Sound",
+     "name": "Eric Justen",
+     "original_name": "Eric Justen",
+     "popularity": 2.3417,
+     "profile_path": "/6XH9DhMhbWctzYRjMOHSXlNh9Es.jpg",
+     "credit_id": "68dc6b335afb57f2ce5315dd",
+     "department": "Sound",
+     "job": "Sound Re-Recording Mixer"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 143921,
+     "known_for_department": "Sound",
+     "name": "Jeffrey Perkins",
+     "original_name": "Jeffrey Perkins",
+     "popularity": 0.7026,
+     "profile_path": null,
+     "credit_id": "68dc79d76c365b970d5313ce",
+     "department": "Sound",
+     "job": "Sound Re-Recording Mixer"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 66633,
+     "known_for_department": "Writing",
+     "name": "Vince Gilligan",
+     "original_name": "Vince Gilligan",
+     "popularity": 2.8676,
+     "profile_path": "/wJIxATESjzsjSgvRhVavOmdamXc.jpg",
+     "credit_id": "52542287760ee31328001af1",
+     "department": "Production",
+     "job": "Executive Producer"
+    }
+   ]
+  }
+ },
+ {
+  "adult": false,
+  "backdrop_path": "/q8eejQcg1bAqImEV8jh8RtBD4uH.jpg",
+  "created_by": [
+   {
+    "id": 2000007,
+    "credit_id": "62d5e468c92c5d004f0d1201",
+    "name": "Christian Linke",
+    "original_name": "Christian Linke",
+    "gender": 2,
+    "profile_path": "/u1uCJkmVSeLQC1CwSB7UzXAVbqO.jpg"
+   },
+   {
+    "id": 3299121,
+    "credit_id": "62d5e46e72c13e062e7196aa",
+    "name": "Alex Yee",
+    "original_name": "Alex Yee",
+    "gender": 2,
+    "profile_path": "/kvRKbXZcCnM6d1vcND4917iQ4kp.jpg"
+   }
+  ],
+  "episode_run_time": [],
+  "first_air_date": "2021-11-06",
+  "genres": [
+   {
+    "id": 16,
+    "name": "Animation"
+   },
+   {
+    "id": 10759,
+    "name": "Action & Adventure"
+   },
+   {
+    "id": 10765,
+    "name": "Sci-Fi & Fantasy"
+   }
+  ],
+  "homepage": "https://arcane.com",
+  "id": 94605,
+  "in_production": false,
+  "languages": [
+   "en"
+  ],
+  "last_air_date": "2024-11-23",
+  "last_episode_to_air": {
+   "id": 5609651,
+   "name": "The Dirt Under Your Nails",
+   "overview": "Magic. Science. Power. Revenge. Destinies clash in an epic final chapter, igniting an all-out war.",
+   "vote_average": 7.644,
+   "vote_count": 90,
+   "air_date": "2024-11-23",
+   "episode_number": 9,
+   "episode_type": "finale",
+   "production_code": "",
+   "runtime": 51,
+   "season_number": 2,
+   "show_id": 94605,
+   "still_path": "/7wYoQZAdbB6e3CFDDYvxQY1sM7.jpg"
+  },
+  "name": "Arcane",
+  "next_episode_to_air": null,
+  "networks": [
+   {
+    "id": 213,
+    "logo_path": "/wwemzKWzjKYJFfCeiB57q3r4Bcm.png",
+    "name": "Netflix",
+    "origin_country": ""
+   }
+  ],
+  "number_of_episodes": 18,
+  "number_of_seasons": 2,
+  "origin_country": [
+   "US"
+  ],
+  "original_language": "en",
+  "original_name": "Arcane",
+  "overview": "Amid the stark discord of twin cities Piltover and Zaun, two sisters fight on rival sides of a war between magic technologies and clashing convictions.",
+  "popularity": 31.0265,
+  "poster_path": "/fqldf2t8ztc9aiwn3k6mlX3tvRT.jpg",
+  "production_companies": [
+   {
+    "id": 99496,
+    "logo_path": "/6WTCdsmIH6qR2zFVHlqjpIZhD5A.png",
+    "name": "Fortiche Production",
+    "origin_country": "FR"
+   },
+   {
+    "id": 124172,
+    "logo_path": "/sBlhznEktXKBqC87Bsfwpo1YbYR.png",
+    "name": "Riot Games",
+    "origin_country": "US"
+   }
+  ],
+  "production_countries": [
+   {
+    "iso_3166_1": "FR",
+    "name": "France"
+   },
+   {
+    "iso_3166_1": "US",
+    "name": "United States of America"
+   }
+  ],
+  "seasons": [
+   {
+    "air_date": "2024-10-08",
+    "episode_count": 25,
+    "id": 427899,
+    "name": "Specials",
+    "overview": "",
+    "poster_path": "/4ZmnQwv6MZH9ahlfzbgcNJPXhuj.jpg",
+    "season_number": 0,
+    "vote_average": 0.0
+   },
+   {
+    "air_date": "2021-11-06",
+    "episode_count": 9,
+    "id": 134187,
+    "name": "Season 1",
+    "overview": "Two sisters. Two cities. One discovery that will change the world forever. In the cities of Piltover and Zaun, unrest stirs as inventors and thieves, politicians and crime lords chafe against the constraints of a society torn asunder.",
+    "poster_path": "/6FMWx79iAtZx8WHtOrRj0VlM8Tp.jpg",
+    "season_number": 1,
+    "vote_average": 8.8
+   },
+   {
+    "air_date": "2024-11-09",
+    "episode_count": 9,
+    "id": 351997,
+    "name": "Season 2",
+    "overview": "Alliances are forged, allegiances are smashed and fresh dangers emerge as the battle between Piltover and Zaun inspires both glory and heartbreak.",
+    "poster_path": "/oTGEwkp1mPgWNMgVSM53TWfzgSc.jpg",
+    "season_number": 2,
+    "vote_average": 7.9
+   }
+  ],
+  "softcore": false,
+  "spoken_languages": [
+   {
+    "english_name": "English",
+    "iso_639_1": "en",
+    "name": "English"
+   }
+  ],
+  "status": "Ended",
+  "tagline": "The hunt is on.",
+  "type": "Scripted",
+  "vote_average": 8.749,
+  "vote_count": 6132,
+  "keywords": {
+   "results": [
+    {
+     "name": "magic",
+     "id": 2343
+    },
+    {
+     "name": "war of independence",
+     "id": 7947
+    },
+    {
+     "name": "steampunk",
+     "id": 10028
+    },
+    {
+     "name": "class differences",
+     "id": 14514
+    },
+    {
+     "name": "battle",
+     "id": 14643
+    },
+    {
+     "name": "based on video game",
+     "id": 41645
+    },
+    {
+     "name": "death in family",
+     "id": 146946
+    },
+    {
+     "name": "adult animation",
+     "id": 161919
+    },
+    {
+     "name": "dark fantasy",
+     "id": 177895
+    },
+    {
+     "name": "warrior",
+     "id": 192913
+    },
+    {
+     "name": "broken family",
+     "id": 193319
+    },
+    {
+     "name": "lesbian",
+     "id": 264386
+    },
+    {
+     "name": "war",
+     "id": 273967
+    },
+    {
+     "name": "3d animation",
+     "id": 278823
+    },
+    {
+     "name": "sisters",
+     "id": 280940
+    },
+    {
+     "name": "power",
+     "id": 288793
+    }
+   ]
+  },
+  "credits": {
+   "cast": [
+    {
+     "adult": false,
+     "gender": 1,
+     "id": 130640,
+     "known_for_department": "Acting",
+     "name": "Hailee Steinfeld",
+     "original_name": "Hailee Steinfeld",
+     "popularity": 4.9348,
+     "profile_path": "/qDInsG0cxWNxS1X4t59TBZ5S6x5.jpg",
+     "character": "Vi (voice)",
+     "credit_id": "614fdc8c397561008c5d43a0",
+     "order": 0
+    },
+    {
+     "adult": false,
+     "gender": 1,
+     "id": 989325,
+     "known_for_department": "Acting",
+     "name": "Ella Purnell",
+     "original_name": "Ella Purnell",
+     "popularity": 5.5985,
+     "profile_path": "/jqrYg35GHuMGwGqEVUthqTLQnay.jpg",
+     "character": "Jinx (voice)",
+     "credit_id": "614fdccb397561008c5d4422",
+     "order": 1
+    }
+   ],
+   "crew": [
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 3324610,
+     "known_for_department": "Art",
+     "name": "Arnaud-Loris Baudry",
+     "original_name": "Arnaud-Loris Baudry",
+     "popularity": 0.4309,
+     "profile_path": null,
+     "credit_id": "633cabff481382007aa0dc34",
+     "department": "Art",
+     "job": "Production Design"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 2530697,
+     "known_for_department": "Production",
+     "name": "Hervé Dupont",
+     "original_name": "Hervé Dupont",
+     "popularity": 0.7535,
+     "profile_path": "/tFEjtbUvghc4tqNQoBVqQvwp1Wm.jpg",
+     "credit_id": "67385d886a02a24d7b215026",
+     "department": "Production",
+     "job": "Executive Producer"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 5062655,
+     "known_for_department": "Production",
+     "name": "Ken Basin",
+     "original_name": "Ken Basin",
+     "popularity": 0.4067,
+     "profile_path": "/3S2nuiJ6zVq1uqZUYmIkHsMQdHz.jpg",
+     "credit_id": "67385d936a02a24d7b215031",
+     "department": "Production",
+     "job": "Executive Producer"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 1957346,
+     "known_for_department": "Visual Effects",
+     "name": "Pascal Charrue",
+     "original_name": "Pascal Charrue",
+     "popularity": 0.5697,
+     "profile_path": "/4z0axhC1oXySE1RBFydKjIkJbpZ.jpg",
+     "credit_id": "67385db35859f981eedf7d5a",
+     "department": "Production",
+     "job": "Executive Producer"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 3299119,
+     "known_for_department": "Directing",
+     "name": "Arnaud Delord",
+     "original_name": "Arnaud Delord",
+     "popularity": 0.5575,
+     "profile_path": "/qUiWtDE38mU0E6zUK4vUBM8jbWt.jpg",
+     "credit_id": "67385dbcff0e18373ceeb9b8",
+     "department": "Production",
+     "job": "Executive Producer"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 1957347,
+     "known_for_department": "Visual Effects",
+     "name": "Jérôme Combe",
+     "original_name": "Jérôme Combe",
+     "popularity": 0.4881,
+     "profile_path": null,
+     "credit_id": "67385dc6bbb49f06a00d65e9",
+     "department": "Production",
+     "job": "Executive Producer"
+    },
+    {
+     "adult": false,
+     "gender": 0,
+     "id": 5062659,
+     "known_for_department": "Art",
+     "name": "Julien Georgei",
+     "original_name": "Julien Georgei",
+     "popularity": 0.2882,
+     "profile_path": null,
+     "credit_id": "67385f97119917bc1f5e66f5",
+     "department": "Art",
+     "job": "Art Direction"
+    },
+    {
+     "adult": false,
+     "gender": 0,
+     "id": 4220079,
+     "known_for_department": "Production",
+     "name": "Ethan Hubbert",
+     "original_name": "Ethan Hubbert",
+     "popularity": 0.4281,
+     "profile_path": null,
+     "credit_id": "67386002bbb49f06a00d6677",
+     "department": "Production",
+     "job": "Casting Associate"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 1957346,
+     "known_for_department": "Visual Effects",
+     "name": "Pascal Charrue",
+     "original_name": "Pascal Charrue",
+     "popularity": 0.5697,
+     "profile_path": "/4z0axhC1oXySE1RBFydKjIkJbpZ.jpg",
+     "credit_id": "677224e305c46ab3fc929d73",
+     "department": "Directing",
+     "job": "Other"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 3299119,
+     "known_for_department": "Directing",
+     "name": "Arnaud Delord",
+     "original_name": "Arnaud Delord",
+     "popularity": 0.5575,
+     "profile_path": "/qUiWtDE38mU0E6zUK4vUBM8jbWt.jpg",
+     "credit_id": "677224f5cfe62644df13294a",
+     "department": "Directing",
+     "job": "Other"
+    },
+    {
+     "adult": false,
+     "gender": 1,
+     "id": 6120964,
+     "known_for_department": "Sound",
+     "name": "Amanda Wyatt",
+     "original_name": "Amanda Wyatt",
+     "popularity": 0.4057,
+     "profile_path": null,
+     "credit_id": "69d2f206757a9cf9439096af",
+     "department": "Sound",
+     "job": "Other"
+    },
+    {
+     "adult": false,
+     "gender": 1,
+     "id": 3324645,
+     "known_for_department": "Art",
+     "name": "Faustine Dumontier",
+     "original_name": "Faustine Dumontier",
+     "popularity": 0.3774,
+     "profile_path": null,
+     "credit_id": "69d5811e8c8b1028e8313f8d",
+     "department": "Art",
+     "job": "Other"
+    },
+    {
+     "adult": false,
+     "gender": 0,
+     "id": 3337442,
+     "known_for_department": "Sound",
+     "name": "Brad Beaumont",
+     "original_name": "Brad Beaumont",
+     "popularity": 0.4078,
+     "profile_path": null,
+     "credit_id": "6a751956171641373ef33e64",
+     "department": "Sound",
+     "job": "Supervising Sound Editor"
+    },
+    {
+     "adult": false,
+     "gender": 0,
+     "id": 1548462,
+     "known_for_department": "Sound",
+     "name": "Eliot Connors",
+     "original_name": "Eliot Connors",
+     "popularity": 0.4273,
+     "profile_path": null,
+     "credit_id": "6a75195c6eb8322d37f33ea7",
+     "department": "Sound",
+     "job": "Supervising Sound Editor"
+    },
+    {
+     "adult": false,
+     "gender": 1,
+     "id": 1395316,
+     "known_for_department": "Sound",
+     "name": "Penny Harold",
+     "original_name": "Penny Harold",
+     "popularity": 0.5922,
+     "profile_path": "/2sMNkNdZgnfH031800UluHjUgZd.jpg",
+     "credit_id": "6a75196f37581f1f163ed010",
+     "department": "Sound",
+     "job": "Sound Re-Recording Mixer"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 1911882,
+     "known_for_department": "Sound",
+     "name": "Andrew Garrett Lange",
+     "original_name": "Andrew Garrett Lange",
+     "popularity": 0.4205,
+     "profile_path": "/gxrtCmtyymX2bHkKzF6AUTicmJC.jpg",
+     "credit_id": "6a7519746eb8322d37f33eaa",
+     "department": "Sound",
+     "job": "Sound Re-Recording Mixer"
+    },
+    {
+     "adult": false,
+     "gender": 0,
+     "id": 6395200,
+     "known_for_department": "Sound",
+     "name": "Janet \"PJ\" Pascual",
+     "original_name": "Janet \"PJ\" Pascual",
+     "popularity": 0.4334,
+     "profile_path": null,
+     "credit_id": "6a7519b40267563a3be106ab",
+     "department": "Sound",
+     "job": "Foley Editor"
+    },
+    {
+     "adult": false,
+     "gender": 0,
+     "id": 6395200,
+     "known_for_department": "Sound",
+     "name": "Janet \"PJ\" Pascual",
+     "original_name": "Janet \"PJ\" Pascual",
+     "popularity": 0.4334,
+     "profile_path": null,
+     "credit_id": "6a7519bc7ed6a7a10003b761",
+     "department": "Sound",
+     "job": "First Assistant Sound Editor"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 1413453,
+     "known_for_department": "Sound",
+     "name": "Stephen P. Robinson",
+     "original_name": "Stephen P. Robinson",
+     "popularity": 0.6982,
+     "profile_path": null,
+     "credit_id": "6a751a395fcd1c7ae4e10572",
+     "department": "Sound",
+     "job": "Sound Editor"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 2924451,
+     "known_for_department": "Sound",
+     "name": "Matthew Kulewicz",
+     "original_name": "Matthew Kulewicz",
+     "popularity": 0.369,
+     "profile_path": null,
+     "credit_id": "6a751b544861667c3039f4d9",
+     "department": "Sound",
+     "job": "Dialogue Editor"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 2924451,
+     "known_for_department": "Sound",
+     "name": "Matthew Kulewicz",
+     "original_name": "Matthew Kulewicz",
+     "popularity": 0.369,
+     "profile_path": null,
+     "credit_id": "6a751b591b0445c993c0440d",
+     "department": "Sound",
+     "job": "ADR Editor"
+    },
+    {
+     "adult": false,
+     "gender": 0,
+     "id": 3324611,
+     "known_for_department": "Art",
+     "name": "Julien Georgel",
+     "original_name": "Julien Georgel",
+     "popularity": 0.3199,
+     "profile_path": null,
+     "credit_id": "67385c355859f981eedf7cf5",
+     "department": "Art",
+     "job": "Production Design"
+    },
+    {
+     "adult": false,
+     "gender": 1,
+     "id": 1341081,
+     "known_for_department": "Production",
+     "name": "Christine Ponzevera",
+     "original_name": "Christine Ponzevera",
+     "popularity": 0.5607,
+     "profile_path": null,
+     "credit_id": "67385c839c16dafa06f99bf7",
+     "department": "Production",
+     "job": "Co-Executive Producer"
+    },
+    {
+     "adult": false,
+     "gender": 1,
+     "id": 1656216,
+     "known_for_department": "Writing",
+     "name": "Amanda Overton",
+     "original_name": "Amanda Overton",
+     "popularity": 0.9047,
+     "profile_path": null,
+     "credit_id": "67385c97a181a717eac895b1",
+     "department": "Production",
+     "job": "Co-Executive Producer"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 3299121,
+     "known_for_department": "Production",
+     "name": "Alex Yee",
+     "original_name": "Alex Yee",
+     "popularity": 0.5494,
+     "profile_path": "/kvRKbXZcCnM6d1vcND4917iQ4kp.jpg",
+     "credit_id": "67385cb7281ac972ea449cf0",
+     "department": "Production",
+     "job": "Executive Producer"
+    },
+    {
+     "adult": false,
+     "gender": 1,
+     "id": 5062654,
+     "known_for_department": "Production",
+     "name": "Shauna Spenley",
+     "original_name": "Shauna Spenley",
+     "popularity": 0.4505,
+     "profile_path": null,
+     "credit_id": "67385cee6a02a24d7b21500f",
+     "department": "Production",
+     "job": "Executive Producer"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 1695622,
+     "known_for_department": "Production",
+     "name": "Brian Wright",
+     "original_name": "Brian Wright",
+     "popularity": 0.5103,
+     "profile_path": null,
+     "credit_id": "67385d5da181a717eac8960d",
+     "department": "Production",
+     "job": "Executive Producer"
+    },
+    {
+     "adult": false,
+     "gender": 1,
+     "id": 90866,
+     "known_for_department": "Production",
+     "name": "Melinda Wunsch Dilger",
+     "original_name": "Melinda Wunsch Dilger",
+     "popularity": 0.5968,
+     "profile_path": null,
+     "credit_id": "67385d7e5859f981eedf7d4a",
+     "department": "Production",
+     "job": "Executive Producer"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 6395201,
+     "known_for_department": "Sound",
+     "name": "Joe Cucci",
+     "original_name": "Joe Cucci",
+     "popularity": 0.3322,
+     "profile_path": null,
+     "credit_id": "6a751a1d8bc119d826351b2c",
+     "department": "Sound",
+     "job": "Foley Mixer"
+    },
+    {
+     "adult": false,
+     "gender": 1,
+     "id": 3171603,
+     "known_for_department": "Sound",
+     "name": "Tavish Grade",
+     "original_name": "Tavish Grade",
+     "popularity": 0.7032,
+     "profile_path": null,
+     "credit_id": "6a7519f68bc119d826351b1e",
+     "department": "Sound",
+     "job": "Foley Mixer"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 2127274,
+     "known_for_department": "Sound",
+     "name": "Jack Cucci",
+     "original_name": "Jack Cucci",
+     "popularity": 0.6008,
+     "profile_path": null,
+     "credit_id": "6a7519e2fb7cd50c603a0354",
+     "department": "Sound",
+     "job": "Foley Mixer"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 1367493,
+     "known_for_department": "Sound",
+     "name": "John T. Cucci",
+     "original_name": "John T. Cucci",
+     "popularity": 0.9321,
+     "profile_path": null,
+     "credit_id": "6a7519d78bc119d826351b18",
+     "department": "Sound",
+     "job": "Foley Artist"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 1338372,
+     "known_for_department": "Sound",
+     "name": "Dan O'Connell",
+     "original_name": "Dan O'Connell",
+     "popularity": 1.247,
+     "profile_path": null,
+     "credit_id": "6a7519c8d930b84cb54535f8",
+     "department": "Sound",
+     "job": "Foley Artist"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 2000008,
+     "known_for_department": "Sound",
+     "name": "Alexander Temple",
+     "original_name": "Alexander Temple",
+     "popularity": 0.3943,
+     "profile_path": null,
+     "credit_id": "6186bda01fd36f008fb25828",
+     "department": "Sound",
+     "job": "Original Music Composer"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 3299503,
+     "known_for_department": "Production",
+     "name": "David Lyerly",
+     "original_name": "David Lyerly",
+     "popularity": 0.3418,
+     "profile_path": null,
+     "credit_id": "6186be420752880063ccff1e",
+     "department": "Production",
+     "job": "Casting"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 3299500,
+     "known_for_department": "Sound",
+     "name": "Alex Seaver",
+     "original_name": "Alex Seaver",
+     "popularity": 0.4533,
+     "profile_path": null,
+     "credit_id": "6186bd9a1fd36f006283ef52",
+     "department": "Sound",
+     "job": "Original Music Composer"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 2000054,
+     "known_for_department": "Acting",
+     "name": "Brandon Beck",
+     "original_name": "Brandon Beck",
+     "popularity": 0.6659,
+     "profile_path": "/17UtrvkKDBS31XtoBWMpDMONjQC.jpg",
+     "credit_id": "6186672313a3880044ee1d5f",
+     "department": "Production",
+     "job": "Executive Producer"
+    },
+    {
+     "adult": false,
+     "gender": 0,
+     "id": 3299111,
+     "known_for_department": "Production",
+     "name": "Jane Chung",
+     "original_name": "Jane Chung",
+     "popularity": 0.4358,
+     "profile_path": null,
+     "credit_id": "6186678f13a3880044ee1d98",
+     "department": "Production",
+     "job": "Executive Producer"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 3299109,
+     "known_for_department": "Production",
+     "name": "Marc Merrill",
+     "original_name": "Marc Merrill",
+     "popularity": 0.6149,
+     "profile_path": "/jaokNgkziOsPgAwmw4l11pRQWoi.jpg",
+     "credit_id": "6186670375f1ad008e413746",
+     "department": "Production",
+     "job": "Executive Producer"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 2000007,
+     "known_for_department": "Production",
+     "name": "Christian Linke",
+     "original_name": "Christian Linke",
+     "popularity": 0.8254,
+     "profile_path": "/u1uCJkmVSeLQC1CwSB7UzXAVbqO.jpg",
+     "credit_id": "618666c513a388002b162821",
+     "department": "Production",
+     "job": "Executive Producer"
+    },
+    {
+     "adult": false,
+     "gender": 0,
+     "id": 3299112,
+     "known_for_department": "Production",
+     "name": "Thomas Vu",
+     "original_name": "Thomas Vu",
+     "popularity": 0.3803,
+     "profile_path": null,
+     "credit_id": "618667ade741460084c2ae76",
+     "department": "Production",
+     "job": "Executive Producer"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 1314953,
+     "known_for_department": "Acting",
+     "name": "Ben McKee",
+     "original_name": "Ben McKee",
+     "popularity": 0.9818,
+     "profile_path": "/fxyDVZsrXH4zyH3LHabXKSQ97wP.jpg",
+     "credit_id": "62bf6ec8325a5100c1fa7653",
+     "department": "Sound",
+     "job": "Theme Song Performance"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 1314952,
+     "known_for_department": "Acting",
+     "name": "Dan Reynolds",
+     "original_name": "Dan Reynolds",
+     "popularity": 1.5766,
+     "profile_path": "/cZ3qu8mLLTSGOV6BX3dj9tDc4UB.jpg",
+     "credit_id": "62bf6ecd22e4800495defe67",
+     "department": "Sound",
+     "job": "Theme Song Performance"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 1314955,
+     "known_for_department": "Acting",
+     "name": "Daniel Platzman",
+     "original_name": "Daniel Platzman",
+     "popularity": 1.0153,
+     "profile_path": "/lxF7i5u7foaO36jmImiyYEatL8s.jpg",
+     "credit_id": "62bf6ed8af6e94046c70771b",
+     "department": "Sound",
+     "job": "Theme Song Performance"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 1314954,
+     "known_for_department": "Acting",
+     "name": "Wayne Sermon",
+     "original_name": "Wayne Sermon",
+     "popularity": 0.7852,
+     "profile_path": "/hb5fnyCejZfLU8hOmW3cqsN1MZy.jpg",
+     "credit_id": "62bf6ed3924ce60059ccc4a4",
+     "department": "Sound",
+     "job": "Theme Song Performance"
+    },
+    {
+     "adult": false,
+     "gender": 2,
+     "id": 3696633,
+     "known_for_department": "Acting",
+     "name": "JID",
+     "original_name": "JID",
+     "popularity": 0.6084,
+     "profile_path": "/y1lLHllCwuMgupwGDy6XEjUa7uW.jpg",
+     "credit_id": "64a906976a3448012ce44ca4",
+     "department": "Sound",
+     "job": "Theme Song Performance"
+    }
+   ]
+  },
+  "external_ids": {
+   "imdb_id": "tt11126994",
+   "freebase_mid": null,
+   "freebase_id": null,
+   "tvdb_id": 371028,
+   "tvrage_id": null,
+   "wikidata_id": "Q85518571",
+   "facebook_id": "arcaneshow",
+   "instagram_id": "arcaneshow",
+   "twitter_id": "arcaneshow"
+  }
+ }
+]

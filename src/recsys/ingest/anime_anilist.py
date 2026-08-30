@@ -22,9 +22,12 @@ and no source may write into another source's row. Every record carries
 ``recsys.link`` joins on to collapse the duplicates out of listings -- an exact
 integer match, not fuzzy title matching.
 
-**Runs after ``anime_mal_csv``.** The ids fetched are the MAL ids already in the
-catalog, so this enriches the catalog that exists rather than importing a second
-one. With an empty catalog it fetches nothing and says so.
+**Two phases.** The MAL ids already in the catalog come first, so this enriches
+what exists rather than importing a second copy of it. But that phase inherits
+the 2018 Kaggle dump's vintage by construction -- it can only ask about anime
+that dump already knew -- so a ``POPULARITY_DESC`` sweep follows and picks up
+everything since. Without it the domain sits seven years stale: 0.8% of works
+were 2019 or later, against 31% of the swept manga domain.
 """
 
 from __future__ import annotations
@@ -44,6 +47,17 @@ class AniListAnimeIngester(AniListIngester):
     # Driven by MyAnimeList ids, because that is what the existing catalog is
     # keyed on and what the resulting rows have to link against.
     id_field = "idMal_in"
+    # Then swept, because the id phase can only ever reach what the 2018 Kaggle
+    # dump already knew. Measured before this was added: 120 of 14,490 anime
+    # were 2019 or later -- 0.8%, against 31% of the manga domain, which is
+    # swept. The catalog was seven years stale and the ids could not fix it.
+    browse_sort = "POPULARITY_DESC"
+    # 750 rows in the first sweep were MUSIC -- opening and ending theme clips
+    # filed as anime. They are not works and cannot be recommended.
+    exclude_formats = ("MUSIC",)
+    # One year at a time, so the sweep is actually complete rather than the
+    # first 5,000 by popularity.
+    partition_by_year = True
 
     def ids_to_fetch(self) -> list[int]:
         """The MAL ids already in the catalog, most popular first.

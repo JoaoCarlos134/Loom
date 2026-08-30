@@ -222,11 +222,16 @@ def seeded(settings, records):
 
 @pytest.fixture
 def offline(monkeypatch, records):
-    """Stub the one method that would hit the network."""
-    async def fake_post(self, ids):
-        return [copy.deepcopy(r) for r in records if r["idMal"] in ids]
+    """Stub the single network entry point, so both fetch phases stay offline."""
+    async def fake_post(self, query, variables, cache_key):
+        if "ids" in variables:  # the id-driven phase
+            wanted = set(variables["ids"])
+            media = [copy.deepcopy(r) for r in records if r["idMal"] in wanted]
+            return {"data": {"Page": {"media": media}}}
+        # the sweep: nothing beyond what the ids already returned
+        return {"data": {"Page": {"media": [], "pageInfo": {"hasNextPage": False}}}}
 
-    monkeypatch.setattr(AniListAnimeIngester, "_post_batch", fake_post)
+    monkeypatch.setattr(AniListAnimeIngester, "_post", fake_post)
 
 
 def test_fetch_is_driven_by_the_mal_ids_already_in_the_catalog(seeded, settings):
@@ -279,8 +284,9 @@ async def test_run_gives_the_mal_rows_a_synopsis_to_link_to(seeded, settings, of
     assert row["description"] and len(row["description"]) > 200
 
 
-async def test_an_empty_catalog_yields_nothing_rather_than_failing(settings, offline):
-    """anime_mal_csv has to run first; saying so beats crashing."""
+async def test_an_empty_catalog_still_sweeps(settings, offline):
+    """anime_mal_csv normally runs first and supplies the ids. Without it the
+    domain degrades to the sweep rather than failing."""
     init_db()
     conn = connect()
     try:
@@ -288,6 +294,29 @@ async def test_an_empty_catalog_yields_nothing_rather_than_failing(settings, off
         assert (result.status, result.n_fetched) == ("ok", 0)
     finally:
         conn.close()
+
+
+async def test_the_sweep_reaches_anime_the_2018_ids_cannot(seeded, settings, monkeypatch, records):
+    """The id phase can only ask about anime the Kaggle dump already knew, so
+    without a sweep the domain stays frozen at 2018. Measured before this was
+    added: 0.8% of works were 2019 or later."""
+    recent = copy.deepcopy(records[0])
+    recent["id"], recent["idMal"], recent["seasonYear"] = 999001, 999001, 2024
+    recent["title"] = {"romaji": "A 2024 Series", "english": None, "native": None}
+
+    async def fake_post(self, query, variables, cache_key):
+        if "ids" in variables:
+            return {"data": {"Page": {"media": []}}}
+        media = [recent] if variables["page"] == 1 else []
+        return {"data": {"Page": {"media": media, "pageInfo": {"hasNextPage": False}}}}
+
+    monkeypatch.setattr(AniListAnimeIngester, "_post", fake_post)
+    result = await AniListAnimeIngester(settings).run(seeded)
+    assert result.n_fetched == 1
+    row = seeded.execute(
+        "SELECT year FROM items WHERE item_uid='anime:anilist:999001'"
+    ).fetchone()
+    assert row["year"] == 2024
 
 
 def test_registry_exposes_the_ingester(settings):

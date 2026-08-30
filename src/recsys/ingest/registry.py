@@ -36,6 +36,30 @@ def _manga_anilist() -> type[IngestRunner]:
     return AniListMangaIngester
 
 
+def _movie_tmdb() -> type[IngestRunner]:
+    from recsys.ingest.movie_tmdb import TmdbMovieIngester
+
+    return TmdbMovieIngester
+
+
+def _tv_tmdb() -> type[IngestRunner]:
+    from recsys.ingest.tv_tmdb import TmdbTvIngester
+
+    return TmdbTvIngester
+
+
+def _goodbooks() -> type[IngestRunner]:
+    from recsys.ingest.book_goodbooks import GoodbooksIngester
+
+    return GoodbooksIngester
+
+
+def _musicbrainz() -> type[IngestRunner]:
+    from recsys.ingest.music_musicbrainz import MusicBrainzIngester
+
+    return MusicBrainzIngester
+
+
 def _mal_ratings() -> type[IngestRunner]:
     from recsys.ingest.ratings_mal_csv import MalRatingsLoader
 
@@ -49,10 +73,11 @@ REGISTRY: dict[str, Callable[[], type[IngestRunner]]] = {
     "anime_mal_csv": _mal_csv,
     "anime_anilist": _anilist,
     "manga_anilist": _manga_anilist,
+    "movie_tmdb": _movie_tmdb,
+    "tv_tmdb": _tv_tmdb,
+    "book_goodbooks": _goodbooks,
+    "music_musicbrainz": _musicbrainz,
     "anime_mal_ratings": _mal_ratings,
-    # Phase 1: "books_openlibrary": _openlibrary,
-    # Phase 1: "movies_tmdb":       _tmdb,
-    # Phase 2: "music_musicbrainz": _musicbrainz,
 }
 
 

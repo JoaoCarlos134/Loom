@@ -221,10 +221,12 @@ def test_target_count_limits_the_id_list(seeded, settings):
     assert len(ingester.ids_to_fetch()) == 2
 
 
-async def test_no_anime_means_nothing_to_fetch(seeded, settings):
-    """anime_anilist has to run first; saying so beats crashing."""
+async def test_no_anime_still_sweeps_for_breadth(seeded, settings, offline):
+    """anime_anilist normally runs first and supplies the adaptation edges. With
+    none, the domain degrades to breadth-only rather than failing."""
     result = await AniListMangaIngester(settings).run(seeded)
-    assert (result.status, result.n_fetched) == ("ok", 0)
+    assert result.status == "ok"
+    assert result.n_fetched == 3  # everything the stubbed sweep offers
 
 
 # ---- the run --------------------------------------------------------------
@@ -232,10 +234,18 @@ async def test_no_anime_means_nothing_to_fetch(seeded, settings):
 
 @pytest.fixture
 def offline(monkeypatch, records):
-    async def fake_post(self, ids):
-        return [copy.deepcopy(r) for r in records if r["id"] in ids]
+    """Stub the single network entry point, so both phases stay offline."""
+    async def fake_post(self, query, variables, cache_key):
+        if "ids" in variables:  # the id-driven phase
+            wanted = set(variables["ids"])
+            media = [copy.deepcopy(r) for r in records if r["id"] in wanted]
+            return {"data": {"Page": {"media": media}}}
+        # the sweep: one page holding everything, then no more
+        page = variables.get("page", 1)
+        media = [copy.deepcopy(r) for r in records] if page == 1 else []
+        return {"data": {"Page": {"media": media, "pageInfo": {"hasNextPage": False}}}}
 
-    monkeypatch.setattr(AniListMangaIngester, "_post_batch", fake_post)
+    monkeypatch.setattr(AniListMangaIngester, "_post", fake_post)
 
 
 async def test_run_populates_a_second_domain(seeded, settings, offline, records):
@@ -278,6 +288,119 @@ async def test_a_shared_mal_id_across_domains_stays_two_works(seeded, settings, 
     ])
     assert rebuild_links(seeded).n_works == 0
     assert query_items(seeded)[0] == 2
+
+
+async def test_the_sweep_adds_manga_no_anime_points_at(seeded, settings, monkeypatch, records):
+    """The reason the sweep exists: most manga were never adapted, so nothing in
+    the catalog points at them and the id phase cannot reach them."""
+    linked, unlinked = records[0], records[1]
+
+    async def fake_post(self, query, variables, cache_key):
+        if "ids" in variables:
+            wanted = set(variables["ids"])
+            return {"data": {"Page": {"media": [
+                copy.deepcopy(r) for r in [linked] if r["id"] in wanted]}}}
+        media = [copy.deepcopy(linked), copy.deepcopy(unlinked)] if variables["page"] == 1 else []
+        return {"data": {"Page": {"media": media, "pageInfo": {"hasNextPage": False}}}}
+
+    monkeypatch.setattr(AniListMangaIngester, "_post", fake_post)
+    upsert_items(seeded, [anime_with_relations(1, [("ADAPTATION", "MANGA", linked["id"])])])
+
+    result = await AniListMangaIngester(settings).run(seeded)
+    # The linked one is not fetched twice even though both phases return it.
+    assert result.n_fetched == 2
+    uids = {r[0] for r in seeded.execute("SELECT item_uid FROM items WHERE domain='manga'")}
+    assert uids == {f"manga:anilist:{linked[chr(105)+chr(100)]}",
+                    f"manga:anilist:{unlinked[chr(105)+chr(100)]}"}
+
+
+async def test_the_sweep_stops_at_the_page_depth_ceiling(seeded, settings, monkeypatch, records):
+    """AniList rejects paging past 5,000 entries with an HTTP 400, not a quiet
+    empty page -- so walking into it fails the whole run."""
+    from recsys.ingest.anilist import MAX_BROWSE_ENTRIES
+
+    pages = []
+
+    async def fake_post(self, query, variables, cache_key):
+        if "ids" in variables:
+            return {"data": {"Page": {"media": []}}}
+        pages.append(variables["page"])
+        return {"data": {"Page": {"media": [copy.deepcopy(records[0])],
+                                  "pageInfo": {"hasNextPage": True}}}}
+
+    monkeypatch.setattr(AniListMangaIngester, "_post", fake_post)
+    ingester = AniListMangaIngester(settings)
+    await ingester.run(seeded)
+    assert max(pages) * ingester.per_page <= MAX_BROWSE_ENTRIES
+
+
+async def test_the_sweep_stops_when_the_pages_run_out(seeded, settings, monkeypatch, records):
+    pages = {"n": 0}
+
+    async def fake_post(self, query, variables, cache_key):
+        if "ids" in variables:
+            return {"data": {"Page": {"media": []}}}
+        pages["n"] += 1
+        page = variables["page"]
+        media = [copy.deepcopy(records[0])] if page == 1 else []
+        return {"data": {"Page": {"media": media, "pageInfo": {"hasNextPage": page < 2}}}}
+
+    monkeypatch.setattr(AniListMangaIngester, "_post", fake_post)
+    ingester = AniListMangaIngester(settings)
+    ingester.partition_by_year = False  # one window, so page counting is meaningful
+    result = await ingester.run(seeded)
+    assert result.n_fetched == 1
+    assert pages["n"] == 2  # asked for page 2, got nothing, stopped
+
+
+async def test_the_sweep_walks_one_window_per_year(seeded, settings, monkeypatch, records):
+    """AniList refuses to page past 5,000 entries into any one listing, so an
+    unpartitioned sweep is capped no matter how long it runs. A year at a time
+    keeps every listing shallow enough to finish."""
+    windows = []
+
+    async def fake_post(self, query, variables, cache_key):
+        if "ids" in variables:
+            return {"data": {"Page": {"media": []}}}
+        windows.append((variables["from"], variables["to"]))
+        return {"data": {"Page": {"media": [], "pageInfo": {"hasNextPage": False}}}}
+
+    monkeypatch.setattr(AniListMangaIngester, "_post", fake_post)
+    await AniListMangaIngester(settings).run(seeded)
+
+    assert len(windows) > 50  # decades of them
+    assert all(to - fr == 10000 for fr, to in windows)  # one year each
+    assert windows == sorted(windows)  # oldest first, no gaps
+    assert len(set(windows)) == len(windows)  # and none repeated
+
+
+async def test_the_sweep_applies_the_popularity_floor(seeded, settings, monkeypatch):
+    """A work nobody has on a list has no audience signal and no reliable
+    score. Filtering at the source means the request is never made."""
+    seen = []
+
+    async def fake_post(self, query, variables, cache_key):
+        if "ids" in variables:
+            return {"data": {"Page": {"media": []}}}
+        seen.append(variables["minPopularity"])
+        return {"data": {"Page": {"media": [], "pageInfo": {"hasNextPage": False}}}}
+
+    monkeypatch.setattr(AniListMangaIngester, "_post", fake_post)
+    ingester = AniListMangaIngester(settings)
+    await ingester.run(seeded)
+    assert seen and all(v == ingester.min_popularity for v in seen)
+    assert ingester.min_popularity > 0
+
+
+async def test_target_count_caps_both_phases_together(seeded, settings, offline, records):
+    upsert_items(seeded, [
+        anime_with_relations(i, [("ADAPTATION", "MANGA", r["id"])])
+        for i, r in enumerate(records, start=1)
+    ])
+    ingester = AniListMangaIngester(settings)
+    ingester.target_count = 2
+    result = await ingester.run(seeded)
+    assert result.n_fetched == 2
 
 
 # ---- the invariant --------------------------------------------------------
