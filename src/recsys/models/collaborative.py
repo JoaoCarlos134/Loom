@@ -291,14 +291,14 @@ class CollaborativeIndex:
 
 
 def _representative(conn: sqlite3.Connection, item_uid: str) -> str:
-    """The row that represents ``item_uid``'s work, or itself if it stands alone."""
-    row = conn.execute(
-        """SELECT p.item_uid FROM links mine
-             JOIN links p ON p.work_uid = mine.work_uid AND p.is_primary = 1
-            WHERE mine.item_uid = ?""",
-        (item_uid,),
-    ).fetchone()
-    return row[0] if row else item_uid
+    """The row that represents ``item_uid``'s work, or itself if it stands alone.
+
+    Delegates to ``link.representative_uid`` so this translation lives in exactly
+    one place -- the same helper franchise suppression uses.
+    """
+    from recsys.link import representative_uid
+
+    return representative_uid(conn, item_uid)
 
 
 @dataclass

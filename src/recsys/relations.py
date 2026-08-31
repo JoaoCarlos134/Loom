@@ -118,6 +118,37 @@ def rebuild_relations(conn: sqlite3.Connection) -> RelationResult:
     return result
 
 
+def franchise_representatives(
+    conn: sqlite3.Connection,
+    item_uid: str,
+    relations: frozenset[str] = FRANCHISE_RELATIONS,
+) -> set[str]:
+    """Representative uids of every work in ``item_uid``'s franchise.
+
+    What ``routes.similar`` suppresses. It translates on *both* ends, which
+    ``related_uids`` alone does not, and that translation is the whole point:
+
+    * Edges live on the AniList row (``relations`` keys them ``…:anilist:…``),
+      which need not be the row a caller holds -- when a richer non-AniList row
+      wins the primary election, the representative is a *different* uid with no
+      edges on it. So edges are gathered from every row of the query's own work,
+      not just the one passed in.
+    * The far side of each edge is likewise an AniList uid, while the neighbours
+      being filtered are representative uids. So each related uid is resolved to
+      the row that represents *its* work.
+
+    Without this, suppression silently works only when a work's representative
+    happens to be its AniList row, and leaks a sequel into "similar" the moment
+    it does not -- the uid-space trap the rest of the read path already avoids.
+    """
+    from recsys.link import representative_uid, work_members
+
+    related: set[str] = set()
+    for member in work_members(conn, item_uid):
+        related |= related_uids(conn, member, relations)
+    return {representative_uid(conn, uid) for uid in related}
+
+
 def related_uids(
     conn: sqlite3.Connection, item_uid: str, relations: frozenset[str] | None = None
 ) -> set[str]:

@@ -151,6 +151,24 @@ def rebuild_links(conn: sqlite3.Connection) -> LinkResult:
     return result
 
 
+def representative_uid(conn: sqlite3.Connection, item_uid: str) -> str:
+    """The row that represents ``item_uid``'s work, or itself if it stands alone.
+
+    The counterpart to ``work_members``: where that returns every row of a work,
+    this returns the single one listings display. Any code comparing against
+    listing-space uids -- similarity neighbours, franchise suppression -- must
+    translate through here, because the row that represents a work is a separate
+    decision from which source an id came from.
+    """
+    row = conn.execute(
+        """SELECT p.item_uid FROM links mine
+             JOIN links p ON p.work_uid = mine.work_uid AND p.is_primary = 1
+            WHERE mine.item_uid = ?""",
+        (item_uid,),
+    ).fetchone()
+    return row[0] if row else item_uid
+
+
 def work_members(conn: sqlite3.Connection, item_uid: str) -> list[str]:
     """Every row describing the same work as ``item_uid``, itself included.
 

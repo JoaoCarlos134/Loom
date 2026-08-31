@@ -129,3 +129,94 @@ def test_related_uids_filters_by_relation(conn):
 def test_the_two_relation_sets_do_not_overlap(conn):
     """A relation cannot be both a cross-domain bridge and a thing to suppress."""
     assert not (ADAPTATION_RELATIONS & FRANCHISE_RELATIONS)
+
+
+# --------------------------------------------------------------------------
+# franchise_representatives: suppression is uid-space correct
+# --------------------------------------------------------------------------
+#
+# Regression for a latent bug: relation edges live in AniList-uid space, but the
+# neighbours franchise suppression filters are in representative-uid space. When
+# a work's AniList row loses the primary election, those two spaces diverge and
+# related_uids -- which does not translate -- returns nothing, leaking a sequel
+# into "similar". franchise_representatives translates both ends.
+
+
+def _linked_pair_where_mal_wins_primary(conn):
+    """One anime work carried by two rows, where the MAL row represents it.
+
+    The AniList row carries a SEQUEL edge but a null synopsis; the MAL row has a
+    description, so _richness hands it the primary election. Returns the two
+    uids plus the sequel's representative uid.
+    """
+    from recsys.link import rebuild_links
+
+    anilist_row = UnifiedItem(
+        domain="anime", source="anilist", source_id="100", title="Show",
+        description=None,                       # no synopsis -> loses primary
+        external_ids={"mal_id": "100"},         # links to the MAL row
+        raw_json={"id": 100, "relations": {"edges": [edge(200, "SEQUEL", "ANIME")]}},
+        fetched_at=utcnow(),
+    )
+    mal_row = UnifiedItem(
+        domain="anime", source="mal", source_id="100", title="Show",
+        description="a real description, so this row wins the primary election",
+        external_ids={"mal_id": "100"},
+        fetched_at=utcnow(),
+    )
+    sequel = anilist(200, "Show 2", edges=[])   # the franchise entry, stands alone
+    upsert_items(conn, [anilist_row, mal_row, sequel])
+    rebuild_links(conn)
+    rebuild_relations(conn)
+    return (
+        make_item_uid("anime", "mal", "100"),       # the work's representative
+        make_item_uid("anime", "anilist", "100"),   # the row that carries the edge
+        make_item_uid("anime", "anilist", "200"),   # the sequel (its own representative)
+    )
+
+
+def test_franchise_representatives_finds_edges_on_a_non_primary_row(conn):
+    rep, _edge_row, sequel = _linked_pair_where_mal_wins_primary(conn)
+
+    # The representative carries no edge of its own...
+    from recsys.relations import FRANCHISE_RELATIONS
+    assert related_uids(conn, rep, FRANCHISE_RELATIONS) == set()
+    # ...yet the franchise is still found, via the work's AniList row.
+    from recsys.relations import franchise_representatives
+    assert franchise_representatives(conn, rep) == {sequel}
+
+
+def test_franchise_representatives_returns_the_neighbour_uid_space(conn):
+    """The suppression set must be spelled the way neighbours are: representatives."""
+    from recsys.link import rebuild_links
+    from recsys.relations import franchise_representatives
+
+    # Query work: single AniList row with a SEQUEL edge -> it is its own rep.
+    # Sequel work: an AniList row that LOSES primary to a richer MAL sibling,
+    # so the sequel's representative is the MAL uid, not the edge's AniList uid.
+    query = anilist(1, "A", edges=[edge(2, "SEQUEL", "ANIME")])
+    seq_anilist = UnifiedItem(
+        domain="anime", source="anilist", source_id="2", title="B",
+        description=None, external_ids={"mal_id": "2"}, fetched_at=utcnow(),
+        raw_json={"id": 2, "relations": {"edges": []}},
+    )
+    seq_mal = UnifiedItem(
+        domain="anime", source="mal", source_id="2", title="B",
+        description="prose, so the MAL row represents work B",
+        external_ids={"mal_id": "2"}, fetched_at=utcnow(),
+    )
+    upsert_items(conn, [query, seq_anilist, seq_mal])
+    rebuild_links(conn)
+    rebuild_relations(conn)
+
+    got = franchise_representatives(conn, make_item_uid("anime", "anilist", "1"))
+    # Resolved to the sequel's representative (MAL), not the edge's AniList uid.
+    assert got == {make_item_uid("anime", "mal", "2")}
+
+
+def test_franchise_representatives_is_empty_for_a_franchiseless_work(conn):
+    from recsys.relations import franchise_representatives
+
+    upsert_items(conn, [anilist(1, "Solo", edges=[])])
+    rebuild_relations(conn)
+    assert franchise_representatives(conn, make_item_uid("anime", "anilist", "1")) == set()

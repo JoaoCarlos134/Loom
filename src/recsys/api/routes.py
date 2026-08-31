@@ -20,7 +20,7 @@ from recsys.db import (
     last_ingest_at,
     query_items,
 )
-from recsys.relations import FRANCHISE_RELATIONS, related_uids
+from recsys.relations import franchise_representatives
 from recsys.schemas import (
     DOMAINS,
     DomainStats,
@@ -159,7 +159,7 @@ def similar(
     # are k genuine neighbours behind the sequels.
     suppress: set[str] = set()
     if not same_franchise:
-        suppress = related_uids(conn, item_uid, FRANCHISE_RELATIONS)
+        suppress = franchise_representatives(conn, item_uid)
     want = k + len(suppress)
 
     if method == "cf":
