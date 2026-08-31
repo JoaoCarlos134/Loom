@@ -20,10 +20,10 @@ SRC = ROOT / "src"
 if SRC.is_dir() and str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from recsys.config import get_settings  # noqa: E402
-from recsys.db import session  # noqa: E402
-from recsys.log import get_logger, setup_logging  # noqa: E402
-from recsys.models.collaborative import (  # noqa: E402
+from recsys.config import get_settings
+from recsys.db import session
+from recsys.log import get_logger, setup_logging
+from recsys.models.collaborative import (
     build_collaborative,
     report_held_out_recall,
 )

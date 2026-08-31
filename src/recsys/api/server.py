@@ -27,7 +27,7 @@ class _NoCacheStatic(StaticFiles):
     edit is a confusing failure mode for zero performance gain locally.
     """
 
-    def file_response(self, *args, **kwargs) -> Response:  # type: ignore[override]
+    def file_response(self, *args, **kwargs) -> Response:
         resp = super().file_response(*args, **kwargs)
         resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         return resp

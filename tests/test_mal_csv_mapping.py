@@ -16,7 +16,6 @@ import pytest
 from recsys.config import Settings, get_settings
 from recsys.ingest.anime_mal_csv import (
     MalCsvAnimeIngester,
-    _parse_score,
     _parse_year,
     _split_list,
     map_mal_row,

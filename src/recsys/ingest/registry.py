@@ -2,85 +2,90 @@
 
 Phase 1+ adds a source by writing ``recsys/ingest/<name>.py`` and adding one
 line here. Nothing else in the codebase names an ingester.
+
+Each entry is a factory ``(Settings) -> IngestRunner``. Returning a constructed
+instance rather than the class keeps the imports lazy (an ingester's optional
+deps load only when it runs) while staying type-honest: a factory returning a
+concrete ``IngestRunner`` satisfies the registry, whereas ``type[IngestRunner]``
+does not -- a protocol type is not something you can instantiate.
 """
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 from recsys.config import Settings
 from recsys.ingest.base import IngestRunner
 
 
-def _jikan() -> type[IngestRunner]:
+def _jikan(settings: Settings) -> IngestRunner:
     from recsys.ingest.anime_jikan import JikanAnimeIngester
 
-    return JikanAnimeIngester
+    return JikanAnimeIngester(settings)
 
 
-def _jikan_text() -> type[IngestRunner]:
+def _jikan_text(settings: Settings) -> IngestRunner:
     from recsys.ingest.anime_jikan_text import JikanAnimeTextIngester
 
-    return JikanAnimeTextIngester
+    return JikanAnimeTextIngester(settings)
 
 
-def _mal_csv() -> type[IngestRunner]:
+def _mal_csv(settings: Settings) -> IngestRunner:
     from recsys.ingest.anime_mal_csv import MalCsvAnimeIngester
 
-    return MalCsvAnimeIngester
+    return MalCsvAnimeIngester(settings)
 
 
-def _anilist() -> type[IngestRunner]:
+def _anilist(settings: Settings) -> IngestRunner:
     from recsys.ingest.anime_anilist import AniListAnimeIngester
 
-    return AniListAnimeIngester
+    return AniListAnimeIngester(settings)
 
 
-def _manga_anilist() -> type[IngestRunner]:
+def _manga_anilist(settings: Settings) -> IngestRunner:
     from recsys.ingest.manga_anilist import AniListMangaIngester
 
-    return AniListMangaIngester
+    return AniListMangaIngester(settings)
 
 
-def _movie_tmdb() -> type[IngestRunner]:
+def _movie_tmdb(settings: Settings) -> IngestRunner:
     from recsys.ingest.movie_tmdb import TmdbMovieIngester
 
-    return TmdbMovieIngester
+    return TmdbMovieIngester(settings)
 
 
-def _tv_tmdb() -> type[IngestRunner]:
+def _tv_tmdb(settings: Settings) -> IngestRunner:
     from recsys.ingest.tv_tmdb import TmdbTvIngester
 
-    return TmdbTvIngester
+    return TmdbTvIngester(settings)
 
 
-def _goodbooks() -> type[IngestRunner]:
+def _goodbooks(settings: Settings) -> IngestRunner:
     from recsys.ingest.book_goodbooks import GoodbooksIngester
 
-    return GoodbooksIngester
+    return GoodbooksIngester(settings)
 
 
-def _openlibrary() -> type[IngestRunner]:
+def _openlibrary(settings: Settings) -> IngestRunner:
     from recsys.ingest.book_openlibrary import OpenLibraryIngester
 
-    return OpenLibraryIngester
+    return OpenLibraryIngester(settings)
 
 
-def _musicbrainz() -> type[IngestRunner]:
+def _musicbrainz(settings: Settings) -> IngestRunner:
     from recsys.ingest.music_musicbrainz import MusicBrainzIngester
 
-    return MusicBrainzIngester
+    return MusicBrainzIngester(settings)
 
 
-def _mal_ratings() -> type[IngestRunner]:
+def _mal_ratings(settings: Settings) -> IngestRunner:
     from recsys.ingest.ratings_mal_csv import MalRatingsLoader
 
-    return MalRatingsLoader
+    return MalRatingsLoader(settings)
 
 
-# name -> lazy loader. Lazy so an ingester's optional deps are imported only
-# when that ingester actually runs.
-REGISTRY: dict[str, Callable[[], type[IngestRunner]]] = {
+# name -> factory. Adding a source is one line here plus its module.
+REGISTRY: dict[str, Callable[[Settings], IngestRunner]] = {
     "anime_jikan": _jikan,
     "anime_jikan_text": _jikan_text,
     "anime_mal_csv": _mal_csv,
@@ -101,9 +106,9 @@ def available() -> list[str]:
 
 def get_ingester(name: str, settings: Settings) -> IngestRunner:
     try:
-        loader = REGISTRY[name]
+        factory = REGISTRY[name]
     except KeyError:
         raise KeyError(
             f"unknown ingester {name!r}; available: {', '.join(available())}"
         ) from None
-    return loader()(settings)
+    return factory(settings)

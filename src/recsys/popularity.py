@@ -40,8 +40,8 @@ from __future__ import annotations
 import math
 import sqlite3
 import statistics
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Sequence
 
 from recsys.log import get_logger
 
@@ -89,7 +89,7 @@ def fit_curve(xs: Sequence[float], ys: Sequence[float]) -> list[tuple[float, flo
     would reorder a source against itself, which is never an improvement over
     simply flattening that step.
     """
-    pairs = sorted(zip(xs, ys))
+    pairs = sorted(zip(xs, ys, strict=True))
     per_bin = max(1, len(pairs) // CURVE_BINS)
     knots: list[tuple[float, float]] = []
     for start in range(0, len(pairs), per_bin):
@@ -261,7 +261,7 @@ def rebuild_popularity(conn: sqlite3.Connection) -> PopularityResult:
                 # Too few anchors to shape a curve; a pure scale shift is the
                 # median of the log ratios, which one outlier cannot drag.
                 scale.method = "offset"
-                scale.offset = statistics.median(y - x for x, y in zip(xs, ys))
+                scale.offset = statistics.median(y - x for x, y in zip(xs, ys, strict=True))
                 to_insert.extend(
                     (uid, math.exp(math.log(pop) + scale.offset)) for uid, pop in rows
                 )

@@ -31,7 +31,8 @@ from __future__ import annotations
 
 import asyncio
 import re
-from typing import Any, AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterator
+from typing import Any, cast
 
 import httpx
 
@@ -41,7 +42,7 @@ from recsys.ingest.cache import DiskCache
 from recsys.ingest.ratelimit import RateLimiter, backoff_delay, parse_retry_after
 from recsys.log import get_logger
 from recsys.net import enable_os_truststore
-from recsys.schemas import Creator, UnifiedItem, utcnow
+from recsys.schemas import Creator, Domain, UnifiedItem, utcnow
 
 log = get_logger(__name__)
 
@@ -132,7 +133,7 @@ def map_openlibrary(
         external_ids["openlibrary_url"] = f"https://openlibrary.org{raw['key']}"
 
     return UnifiedItem(
-        domain=DOMAIN,
+        domain=cast(Domain, DOMAIN),
         source=SOURCE,
         source_id=isbn,
         title=title,

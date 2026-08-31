@@ -37,9 +37,10 @@ import csv
 import sqlite3
 import time
 import traceback
-from datetime import datetime, timezone
+from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterator
+from typing import ClassVar
 
 from recsys.config import Settings
 from recsys.db import finish_ingest_run, start_ingest_run, upsert_ratings
@@ -88,7 +89,7 @@ def _parse_rated_at(value: str) -> str | None:
         epoch = int(text)
         if epoch <= 0:
             return None
-        return datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat()
+        return datetime.fromtimestamp(epoch, tz=UTC).isoformat()
     return text.replace(" ", "T", 1)
 
 
@@ -124,12 +125,12 @@ def map_rating(
 class MalRatingsLoader:
     """Streams the user-list table of the Kaggle MyAnimeList dump into ``ratings``."""
 
-    name = "anime_mal_ratings"
-    domain = DOMAIN
+    name: ClassVar[str] = "anime_mal_ratings"
+    domain: ClassVar[str] = DOMAIN
     # The ``ingest_runs`` label. Deliberately not SOURCE: ``anime_mal_csv``
     # already records catalog runs under "mal", and a ratings run reporting
     # millions of rows against that same label would be unreadable.
-    source = "mal_ratings"
+    source: ClassVar[str] = "mal_ratings"
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings

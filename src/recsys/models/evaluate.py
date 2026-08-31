@@ -117,8 +117,8 @@ def adaptation_recall(
     index = SimilarityIndex.load(embeddings_path)
     result = RecallResult()
     result.n_manga = sum(1 for d in index.domains if d == "manga")
-    result.hits = {k: 0 for k in cutoffs}
-    result.hard_hits = {k: 0 for k in cutoffs}
+    result.hits = dict.fromkeys(cutoffs, 0)
+    result.hard_hits = dict.fromkeys(cutoffs, 0)
     largest = max(cutoffs)
 
     titles = {r[0]: r[1] for r in conn.execute("SELECT item_uid, title FROM items")}

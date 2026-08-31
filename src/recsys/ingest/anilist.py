@@ -23,8 +23,9 @@ import asyncio
 import hashlib
 import html
 import re
-from datetime import datetime, timezone
-from typing import Any, AsyncIterator, ClassVar, Iterator
+from collections.abc import AsyncIterator, Iterator
+from datetime import UTC, datetime
+from typing import Any, ClassVar, cast
 
 import httpx
 
@@ -34,7 +35,7 @@ from recsys.ingest.cache import DiskCache
 from recsys.ingest.ratelimit import RateLimiter, backoff_delay, parse_retry_after
 from recsys.log import get_logger
 from recsys.net import enable_os_truststore
-from recsys.schemas import Creator, UnifiedItem, utcnow
+from recsys.schemas import Creator, Domain, UnifiedItem, utcnow
 
 log = get_logger(__name__)
 
@@ -327,7 +328,7 @@ def map_anilist_media(
     popularity = raw.get("popularity")
 
     return UnifiedItem(
-        domain=domain,
+        domain=cast(Domain, domain),
         source=SOURCE,
         source_id=str(raw["id"]),
         title=canonical,
@@ -466,7 +467,7 @@ class AniListIngester(Ingester):
         Returns the whole response body rather than just the media list, because
         the sweep needs ``pageInfo`` from it too.
         """
-        cached = self.cache.get(cache_key)
+        cached: dict[str, Any] | None = self.cache.get(cache_key)
         if cached is not None:
             self.n_cached += 1
             return cached
@@ -488,9 +489,12 @@ class AniListIngester(Ingester):
                 continue
 
             if resp.status_code == 429 or resp.status_code >= 500:
-                delay = parse_retry_after(resp.headers.get("Retry-After"))
-                if delay is None:
-                    delay = backoff_delay(attempt, base=2.0 if resp.status_code == 429 else 1.0)
+                retry_after = parse_retry_after(resp.headers.get("Retry-After"))
+                delay = (
+                    retry_after
+                    if retry_after is not None
+                    else backoff_delay(attempt, base=2.0 if resp.status_code == 429 else 1.0)
+                )
                 last_error = f"HTTP {resp.status_code}"
                 log.warning("%s from AniList -- backing off %.1fs (%d/%d)",
                             last_error, delay, attempt + 1, self.max_retries)
@@ -502,7 +506,7 @@ class AniListIngester(Ingester):
                     f"AniList returned HTTP {resp.status_code}: {resp.text[:200]}"
                 )
 
-            body = resp.json()
+            body: dict[str, Any] = resp.json()
             # GraphQL reports failures inside a 200. A partial response still
             # carries usable media, so warn and keep whatever came back.
             if body.get("errors"):
@@ -531,7 +535,7 @@ class AniListIngester(Ingester):
         if not self.partition_by_year:
             return [("all", None, None)]
 
-        end = datetime.now(timezone.utc).year + 2
+        end = datetime.now(UTC).year + 2
         return [
             (str(year), year * 10000, (year + 1) * 10000)
             for year in range(self.first_year, end)

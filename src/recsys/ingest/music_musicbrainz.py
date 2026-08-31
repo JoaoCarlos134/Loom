@@ -40,7 +40,8 @@ different people.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any, cast
 
 import httpx
 
@@ -50,7 +51,7 @@ from recsys.ingest.cache import DiskCache
 from recsys.ingest.ratelimit import RateLimiter, backoff_delay, parse_retry_after
 from recsys.log import get_logger
 from recsys.net import enable_os_truststore
-from recsys.schemas import Creator, UnifiedItem, utcnow
+from recsys.schemas import Creator, Domain, UnifiedItem, utcnow
 
 log = get_logger(__name__)
 
@@ -78,9 +79,7 @@ def _is_useful_tag(tag: str) -> bool:
     if not name or name in _TAG_NOISE:
         return False
     # "2000s", "80s", "1990s" -- a decade is not a genre.
-    if name.rstrip("s").isdigit():
-        return False
-    return True
+    return not name.rstrip("s").isdigit()
 
 
 def normalise_name(name: str) -> str:
@@ -120,7 +119,7 @@ def map_artist(
     scored = raw.get("_scored_titles")
 
     return UnifiedItem(
-        domain=DOMAIN,
+        domain=cast(Domain, DOMAIN),
         source=SOURCE,
         source_id=str(mbid),
         title=name,

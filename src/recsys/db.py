@@ -14,10 +14,11 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Sequence
+from typing import Any
 
 from recsys.config import get_settings
 from recsys.log import get_logger
@@ -343,9 +344,11 @@ def start_ingest_run(conn: sqlite3.Connection, source: str, domain: str) -> int:
     with conn:
         cur = conn.execute(
             "INSERT INTO ingest_runs (source, domain, started_at) VALUES (?, ?, ?)",
-            (source, domain, datetime.now(timezone.utc).isoformat()),
+            (source, domain, datetime.now(UTC).isoformat()),
         )
-    return int(cur.lastrowid)
+    row_id = cur.lastrowid
+    assert row_id is not None  # a successful INSERT always sets lastrowid
+    return row_id
 
 
 def finish_ingest_run(
@@ -366,7 +369,7 @@ def finish_ingest_run(
                    n_cached=?, status=?, error=?
                WHERE id=?""",
             (
-                datetime.now(timezone.utc).isoformat(),
+                datetime.now(UTC).isoformat(),
                 n_fetched, n_inserted, n_updated, n_cached, status, error, run_id,
             ),
         )
@@ -407,7 +410,7 @@ _WORKS_ORDER = "w.sort_key"
 
 
 def _works_built(conn: sqlite3.Connection) -> bool:
-    return conn.execute("SELECT EXISTS(SELECT 1 FROM works)").fetchone()[0] == 1
+    return bool(conn.execute("SELECT EXISTS(SELECT 1 FROM works)").fetchone()[0] == 1)
 
 
 def build_fts_query(q: str) -> str | None:

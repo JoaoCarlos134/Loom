@@ -11,8 +11,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from recsys import __version__
-from recsys.db import connect, init_db, upsert_items
 from recsys.config import get_settings
+from recsys.db import connect, init_db, upsert_items
 from recsys.schemas import DOMAINS, UnifiedItem
 
 

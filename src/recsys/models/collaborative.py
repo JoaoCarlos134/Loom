@@ -39,7 +39,6 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterator
 
 from recsys.log import get_logger
 
@@ -154,7 +153,7 @@ def build_collaborative(
     live = remap[i_idx] >= 0
     u_idx, centred = u_idx[live], centred[live]
     i_idx = remap[i_idx[live]]
-    kept_uids = [uid for uid, k_ in zip(uids, keep) if k_]
+    kept_uids = [uid for uid, k_ in zip(uids, keep, strict=True) if k_]
 
     # Order by user so each chunk is a contiguous slice.
     order = np.argsort(u_idx, kind="stable")
@@ -197,7 +196,7 @@ def build_collaborative(
 
     src, dst, sc = [], [], []
     for i in range(result.n_items):
-        for j, s in zip(top[i], scores[i]):
+        for j, s in zip(top[i], scores[i], strict=True):
             if s <= 0.0 or not np.isfinite(s):
                 continue  # a negative neighbour is not a recommendation
             src.append(kept_uids[i])
@@ -244,7 +243,7 @@ class CollaborativeIndex:
         return len(self.neighbours)
 
     @classmethod
-    def load(cls, path: Path) -> "CollaborativeIndex":
+    def load(cls, path: Path) -> CollaborativeIndex:
         import pyarrow.parquet as pq
 
         table = pq.read_table(path)
@@ -253,6 +252,7 @@ class CollaborativeIndex:
             table.column("item_uid").to_pylist(),
             table.column("neighbour_uid").to_pylist(),
             table.column("score").to_pylist(),
+            strict=True,
         ):
             out.setdefault(item_uid, []).append(Neighbour(neighbour_uid, float(score)))
         return cls(out)
@@ -318,7 +318,7 @@ class CfRecallResult:
 
 def held_out_recall(
     conn: sqlite3.Connection,
-    index: "CollaborativeIndex",
+    index: CollaborativeIndex,
     *,
     cutoffs: tuple[int, ...] = (1, 10, 50),
     n_users: int = 2000,
@@ -339,8 +339,8 @@ def held_out_recall(
 
     rng = random.Random(seed)
     result = CfRecallResult()
-    result.hits = {k: 0 for k in cutoffs}
-    result.popular_hits = {k: 0 for k in cutoffs}
+    result.hits = dict.fromkeys(cutoffs, 0)
+    result.popular_hits = dict.fromkeys(cutoffs, 0)
     largest = max(cutoffs)
 
     popular = [

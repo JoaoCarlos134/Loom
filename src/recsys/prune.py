@@ -58,13 +58,13 @@ def rules(settings) -> list[PruneRule]:
     """The bars a stored row must still clear, mirroring the ingest filters."""
     return [
         PruneRule(
-            "movie: fewer than %d votes" % settings.tmdb_min_votes,
+            f"movie: fewer than {settings.tmdb_min_votes} votes",
             "movie",
             "COALESCE(n_ratings, 0) < ?",
             (settings.tmdb_min_votes,),
         ),
         PruneRule(
-            "tv: fewer than %d votes" % settings.tmdb_tv_min_votes,
+            f"tv: fewer than {settings.tmdb_tv_min_votes} votes",
             "tv",
             "COALESCE(n_ratings, 0) < ?",
             (settings.tmdb_tv_min_votes,),

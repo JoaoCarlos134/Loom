@@ -8,7 +8,7 @@ the saved fixture with no network. The fixture holds three real records
 from __future__ import annotations
 
 import copy
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -57,7 +57,7 @@ def test_raw_json_is_carried_verbatim(fma):
 
 
 def test_fetched_at_override_is_used(fma):
-    stamp = datetime(2024, 5, 1, tzinfo=timezone.utc)
+    stamp = datetime(2024, 5, 1, tzinfo=UTC)
     assert map_jikan_anime(fma, fetched_at=stamp).fetched_at == stamp
 
 

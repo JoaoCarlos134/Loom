@@ -7,7 +7,7 @@ rating scale, tag casing that splits one concept into two.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 from pydantic import ValidationError
@@ -154,7 +154,7 @@ def test_naive_fetched_at_is_made_utc_aware():
 def test_aware_fetched_at_converted_to_utc():
     tz = timezone(timedelta(hours=-3))  # BRT
     item = make(fetched_at=datetime(2024, 1, 1, 9, 0, 0, tzinfo=tz))
-    assert item.fetched_at == datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    assert item.fetched_at == datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
 
 
 # ---- persistence round trip ----------------------------------------------

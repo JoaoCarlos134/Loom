@@ -13,13 +13,13 @@ bootstrap.py or the UI.
 
 from __future__ import annotations
 
+import sqlite3
 import time
 import traceback
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, ClassVar, Protocol
-
-import sqlite3
+from typing import Any, ClassVar, Protocol
 
 from recsys.config import Settings
 from recsys.db import finish_ingest_run, start_ingest_run, upsert_items
@@ -58,9 +58,9 @@ class IngestRunner(Protocol):
     and the registry indifferent to which kind they are holding.
     """
 
-    name: str
-    domain: str
-    source: str
+    name: ClassVar[str]
+    domain: ClassVar[str]
+    source: ClassVar[str]
 
     async def run(self, conn: sqlite3.Connection) -> IngestResult: ...
 
@@ -95,7 +95,9 @@ class Ingester(ABC):
     def map_item(self, raw: dict[str, Any]) -> UnifiedItem | None:
         """Map one raw record to a UnifiedItem, or None to skip it."""
 
-    async def aclose(self) -> None:
+    async def aclose(self) -> None:  # noqa: B027
+        # Concrete no-op on purpose: an optional teardown hook, not part of
+        # the subclass contract. Ingesters that hold no client need not override it.
         """Release network resources. Overridden when a client is held."""
 
     # ---- generic run loop -------------------------------------------------

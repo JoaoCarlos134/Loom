@@ -13,8 +13,9 @@ from __future__ import annotations
 
 import asyncio
 import re
+from collections.abc import AsyncIterator
 from datetime import datetime
-from typing import Any, AsyncIterator
+from typing import Any, cast
 
 import httpx
 
@@ -24,7 +25,7 @@ from recsys.ingest.cache import DiskCache
 from recsys.ingest.ratelimit import RateLimiter, backoff_delay, parse_retry_after
 from recsys.log import get_logger
 from recsys.net import enable_os_truststore
-from recsys.schemas import Creator, UnifiedItem, utcnow
+from recsys.schemas import Creator, Domain, UnifiedItem, utcnow
 
 log = get_logger(__name__)
 
@@ -162,7 +163,7 @@ def map_jikan_anime(
     members = raw.get("members")
 
     return UnifiedItem(
-        domain=DOMAIN,
+        domain=cast(Domain, DOMAIN),
         source=SOURCE,
         source_id=str(mal_id),
         title=canonical,
@@ -222,7 +223,7 @@ class JikanAnimeIngester(Ingester):
             self._client = None
 
     async def _get_json(self, url: str) -> dict[str, Any]:
-        cached = self.cache.get(url)
+        cached: dict[str, Any] | None = self.cache.get(url)
         if cached is not None:
             self.n_cached += 1
             return cached
@@ -243,16 +244,19 @@ class JikanAnimeIngester(Ingester):
                 continue
 
             if resp.status_code == 200:
-                payload = resp.json()
+                payload: dict[str, Any] = resp.json()
                 self.cache.set(url, payload)
                 return payload
 
             if resp.status_code == 429 or resp.status_code >= 500:
                 # 429 means the shared public quota is exhausted, not that our
                 # own limiter is wrong -- back off and let it drain.
-                delay = parse_retry_after(resp.headers.get("Retry-After"))
-                if delay is None:
-                    delay = backoff_delay(attempt, base=2.0 if resp.status_code == 429 else 1.0)
+                retry_after = parse_retry_after(resp.headers.get("Retry-After"))
+                delay = (
+                    retry_after
+                    if retry_after is not None
+                    else backoff_delay(attempt, base=2.0 if resp.status_code == 429 else 1.0)
+                )
                 last_error = f"HTTP {resp.status_code}"
                 log.warning("%s from %s -- backing off %.1fs (%d/%d)",
                             last_error, url, delay, attempt + 1, self.max_retries)

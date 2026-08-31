@@ -29,8 +29,9 @@ built. Nothing under ``DATA_DIR`` and nothing in the logs contains either.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator, Iterable
 from datetime import datetime
-from typing import Any, AsyncIterator, ClassVar, Iterable
+from typing import Any, ClassVar, cast
 
 import httpx
 
@@ -40,7 +41,7 @@ from recsys.ingest.cache import DiskCache
 from recsys.ingest.ratelimit import RateLimiter, backoff_delay, parse_retry_after
 from recsys.log import get_logger
 from recsys.net import enable_os_truststore
-from recsys.schemas import Creator, UnifiedItem, utcnow
+from recsys.schemas import Creator, Domain, UnifiedItem, utcnow
 
 log = get_logger(__name__)
 
@@ -89,7 +90,8 @@ def _creators(raw: dict[str, Any]) -> list[Creator]:
     billing order.
     """
     credits = raw.get("credits") or {}
-    crew = credits.get("crew") if isinstance(credits.get("crew"), list) else []
+    _crew = credits.get("crew")
+    crew = _crew if isinstance(_crew, list) else []
 
     out = _names(raw.get("created_by"), "creator")
     out += [
@@ -211,7 +213,7 @@ def map_tmdb(
     overview = raw.get("overview")
 
     return UnifiedItem(
-        domain=domain,
+        domain=cast(Domain, domain),
         source=SOURCE,
         source_id=str(raw["id"]),
         title=canonical,
@@ -300,7 +302,7 @@ class TmdbIngester(Ingester):
 
     async def _get_json(self, path: str, **params: Any) -> dict[str, Any]:
         key = self._cache_key(path, params)
-        cached = self.cache.get(key)
+        cached: dict[str, Any] | None = self.cache.get(key)
         if cached is not None:
             self.n_cached += 1
             return cached
@@ -325,14 +327,17 @@ class TmdbIngester(Ingester):
                 continue
 
             if resp.status_code == 200:
-                payload = resp.json()
+                payload: dict[str, Any] = resp.json()
                 self.cache.set(key, payload)
                 return payload
 
             if resp.status_code == 429 or resp.status_code >= 500:
-                delay = parse_retry_after(resp.headers.get("Retry-After"))
-                if delay is None:
-                    delay = backoff_delay(attempt, base=2.0 if resp.status_code == 429 else 1.0)
+                retry_after = parse_retry_after(resp.headers.get("Retry-After"))
+                delay = (
+                    retry_after
+                    if retry_after is not None
+                    else backoff_delay(attempt, base=2.0 if resp.status_code == 429 else 1.0)
+                )
                 last_error = f"HTTP {resp.status_code}"
                 log.warning("%s from TMDB -- backing off %.1fs (%d/%d)",
                             last_error, delay, attempt + 1, self.max_retries)

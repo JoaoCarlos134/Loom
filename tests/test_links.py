@@ -13,10 +13,10 @@ import pytest
 
 from recsys.db import (
     connect,
-    fill_from_siblings,
     count_items,
     count_rows,
     domain_stats,
+    fill_from_siblings,
     get_item,
     init_db,
     query_items,

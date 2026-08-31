@@ -36,7 +36,7 @@ class SimilarityIndex:
         return len(self.uids)
 
     @classmethod
-    def load(cls, path: Path) -> "SimilarityIndex":
+    def load(cls, path: Path) -> SimilarityIndex:
         import numpy as np
         import pyarrow.parquet as pq
 

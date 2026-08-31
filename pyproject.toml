@@ -21,6 +21,9 @@ dependencies = [
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
+    "pytest-cov>=7.0",
+    "ruff>=0.16",
+    "mypy>=2.3",
 ]
 
 [build-system]
@@ -37,3 +40,65 @@ package = true
 testpaths = ["tests"]
 asyncio_mode = "auto"
 filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.coverage.run]
+source = ["recsys"]
+branch = true
+omit = ["*/ui/*"]
+
+[tool.coverage.report]
+# Lines that never run in a code-only, no-corpus environment or that only guard
+# against an environment we cannot reproduce here.
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "def __repr__",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+# A deliberately practical set, not the whole catalogue: pyflakes + pycodestyle
+# errors, import sorting, pyupgrade, bugbear, comprehensions, a few simplify
+# rules, and ruff's own. Aggressive families (ANN, D, PLR magic-value, TRY) are
+# left off so the signal stays worth reading on an existing 7k-line codebase.
+select = ["E", "F", "I", "UP", "B", "C4", "SIM", "RUF"]
+ignore = [
+    "E501",    # line length is enforced by the formatter, not the linter
+    "B008",    # FastAPI's Depends() in defaults is the framework's idiom
+    "SIM108",  # ternary-over-if is not always the more readable form
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests lean on fixtures and long literal payloads; imports there are for effect.
+"tests/*" = ["E402", "C408"]  # dict(**kwargs) helpers read fine in tests
+"scripts/*" = ["E402"]  # sys.path shimming precedes imports by design
+
+[tool.ruff.lint.isort]
+known-first-party = ["recsys"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src", "scripts"]
+# Pragmatic, not strict: this is a retrofit onto an existing codebase. Tighten
+# per-module over time rather than drowning the first run in strictness errors.
+check_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+warn_return_any = true
+
+[[tool.mypy.overrides]]
+# Third-party packages that ship no type information.
+module = [
+    "fastembed.*",
+    "kagglehub.*",
+    "webview.*",
+    "pyarrow.*",
+    "truststore.*",
+]
+ignore_missing_imports = true

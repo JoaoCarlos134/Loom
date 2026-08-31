@@ -37,7 +37,8 @@ ids, one URL shape, and a name.
 
 from __future__ import annotations
 
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 from recsys.ingest.anime_jikan import DOMAIN, SOURCE, JikanAnimeIngester
 from recsys.log import get_logger

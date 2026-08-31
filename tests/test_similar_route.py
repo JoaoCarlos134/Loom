@@ -208,7 +208,7 @@ def cf_client(seeded):
 
 def test_cf_answers_from_the_ratings_model_not_the_vectors(cf_client):
     body = cf_client.get("/api/similar/anime:anilist:1?method=cf").json()
-    assert [n["item"]["item_uid"] for n in body["neighbours"]][0] == "anime:anilist:3"
+    assert next(n["item"]["item_uid"] for n in body["neighbours"]) == "anime:anilist:3"
 
 
 def test_content_still_answers_from_the_vectors(cf_client):

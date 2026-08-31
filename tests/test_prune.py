@@ -124,8 +124,9 @@ def test_the_dry_run_count_matches_what_deletion_removes(conn, settings):
         *[item("movie", i, n_ratings=1) for i in range(5)],
         *[item("movie", 100 + i, n_ratings=99_999) for i in range(3)],
     ])
-    predicted = prune(conn, settings).counts["movie: fewer than %d votes"
-                                             % settings.tmdb_min_votes]
+    predicted = prune(conn, settings).counts[
+        f"movie: fewer than {settings.tmdb_min_votes} votes"
+    ]
     actual = prune(conn, settings, dry_run=False).deleted
     assert predicted == actual == 5
     assert count_rows(conn) == 3

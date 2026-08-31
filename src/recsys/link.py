@@ -24,8 +24,9 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any
 
 from recsys.log import get_logger
 from recsys.schemas import make_work_uid

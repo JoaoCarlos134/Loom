@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterator
+from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated, Iterator
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -21,6 +23,7 @@ from recsys.db import (
 from recsys.relations import FRANCHISE_RELATIONS, related_uids
 from recsys.schemas import (
     DOMAINS,
+    DomainStats,
     Health,
     ItemsPage,
     SimilarItem,
@@ -190,7 +193,8 @@ def similar(
             )
         found = index.similar_to(item_uid, k=want, domain=domain)
 
-    kept, n_suppressed = [], 0
+    kept: list[Any] = []
+    n_suppressed = 0
     for neighbour in found:
         if neighbour.item_uid in suppress:
             n_suppressed += 1
@@ -215,10 +219,11 @@ def similar(
 
 @router.get("/stats", response_model=Stats)
 def stats(conn: Conn, cfg: Cfg) -> Stats:
+    last = last_ingest_at(conn)
     return Stats(
         total_items=count_items(conn),
-        by_domain=domain_stats(conn),
-        last_ingest_at=last_ingest_at(conn),
+        by_domain=[DomainStats.model_validate(d) for d in domain_stats(conn)],
+        last_ingest_at=datetime.fromisoformat(last) if last else None,
         db_path=str(cfg.db_path),
         region=cfg.region,
     )

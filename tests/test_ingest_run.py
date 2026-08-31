@@ -7,7 +7,8 @@ an upstream outage part-way through) are awkward to provoke over a real network.
 
 from __future__ import annotations
 
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 import pytest
 

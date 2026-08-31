@@ -28,8 +28,9 @@ from __future__ import annotations
 import csv
 import io
 from collections import defaultdict
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any, cast
 
 import httpx
 
@@ -37,7 +38,7 @@ from recsys.config import Settings
 from recsys.ingest.base import Ingester
 from recsys.log import get_logger
 from recsys.net import enable_os_truststore
-from recsys.schemas import Creator, UnifiedItem, utcnow
+from recsys.schemas import Creator, Domain, UnifiedItem, utcnow
 
 log = get_logger(__name__)
 
@@ -174,7 +175,7 @@ def map_goodbooks_row(
     external_ids["goodreads_url"] = f"https://www.goodreads.com/book/show/{book_id}"
 
     return UnifiedItem(
-        domain=DOMAIN,
+        domain=cast(Domain, DOMAIN),
         source=SOURCE,
         source_id=book_id,
         title=canonical,
@@ -211,7 +212,7 @@ class GoodbooksIngester(Ingester):
 
     # ---- source files -----------------------------------------------------
 
-    def read_csv(self, filename: str) -> list[dict[str, str]]:
+    def read_csv(self, filename: str) -> list[dict[str, Any]]:
         """Read one CSV, from a local directory if configured or over HTTP.
 
         The three files total ~5 MB, so they are fetched fresh rather than

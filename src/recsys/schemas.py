@@ -8,7 +8,7 @@ file beyond widening the ``Domain`` literal.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -19,7 +19,7 @@ DOMAINS: tuple[str, ...] = ("anime", "manga", "book", "music", "movie", "tv")
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def make_item_uid(domain: str, source: str, source_id: str) -> str:
@@ -177,10 +177,10 @@ class UnifiedItem(BaseModel):
     @field_validator("fetched_at")
     @classmethod
     def _tz_aware(cls, v: datetime) -> datetime:
-        return v.replace(tzinfo=timezone.utc) if v.tzinfo is None else v.astimezone(timezone.utc)
+        return v.replace(tzinfo=UTC) if v.tzinfo is None else v.astimezone(UTC)
 
     @model_validator(mode="after")
-    def _derive_uid(self) -> "UnifiedItem":
+    def _derive_uid(self) -> UnifiedItem:
         expected = make_item_uid(self.domain, self.source, self.source_id)
         if self.item_uid and self.item_uid != expected:
             raise ValueError(f"item_uid {self.item_uid!r} does not match {expected!r}")
@@ -212,7 +212,7 @@ class UnifiedItem(BaseModel):
         }
 
     @classmethod
-    def from_row(cls, row: Any) -> "UnifiedItem":
+    def from_row(cls, row: Any) -> UnifiedItem:
         d = dict(row)
         d["alt_titles"] = json.loads(d.get("alt_titles") or "[]")
         d["creators"] = json.loads(d.get("creators") or "[]")

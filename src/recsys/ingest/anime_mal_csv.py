@@ -26,15 +26,15 @@ from __future__ import annotations
 import ast
 import csv
 import re
-import sys
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any, cast
 
 from recsys.config import Settings
 from recsys.ingest.base import Ingester
 from recsys.ingest.kaggle import resolve_kaggle_file
 from recsys.log import get_logger
-from recsys.schemas import Creator, UnifiedItem, utcnow
+from recsys.schemas import Creator, Domain, UnifiedItem, utcnow
 
 log = get_logger(__name__)
 
@@ -174,7 +174,7 @@ def map_mal_row(raw: dict[str, Any], *, fetched_at: Any = None) -> UnifiedItem |
     members = _as_float(raw.get("members"))
 
     return UnifiedItem(
-        domain=DOMAIN,
+        domain=cast(Domain, DOMAIN),
         source=SOURCE,
         source_id=anime_id,
         title=canonical,

@@ -20,22 +20,22 @@ SRC = ROOT / "src"
 if SRC.is_dir() and str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from recsys.config import get_settings  # noqa: E402
-from recsys.db import (  # noqa: E402
+from recsys.config import get_settings
+from recsys.db import (
     count_items,
     count_rows,
     domain_stats,
     init_db,
     session,
 )
-from recsys.ingest.base import IngestResult  # noqa: E402
-from recsys.ingest.registry import available, get_ingester  # noqa: E402
-from recsys.link import LinkResult, rebuild_links  # noqa: E402
-from recsys.popularity import PopularityResult, rebuild_popularity  # noqa: E402
-from recsys.prune import prune  # noqa: E402
-from recsys.relations import RelationResult, rebuild_relations  # noqa: E402
-from recsys.works import WorksResult, rebuild_works  # noqa: E402
-from recsys.log import get_logger, setup_logging  # noqa: E402
+from recsys.ingest.base import IngestResult
+from recsys.ingest.registry import available, get_ingester
+from recsys.link import LinkResult, rebuild_links
+from recsys.log import get_logger, setup_logging
+from recsys.popularity import PopularityResult, rebuild_popularity
+from recsys.prune import prune
+from recsys.relations import RelationResult, rebuild_relations
+from recsys.works import WorksResult, rebuild_works
 
 log = get_logger("recsys.bootstrap")
 

@@ -29,8 +29,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
-from typing import Callable, Iterable, Iterator, Sequence
 
 from recsys.log import get_logger
 
