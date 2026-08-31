@@ -3,11 +3,14 @@
 Cross-domain hybrid recommender system (anime / manga / books / music / movies / TV) that runs
 as a local desktop app. No server, no cloud, no admin rights.
 
-**Status: Phase 3 started** — project skeleton plus one domain (anime) ingested end
-to end from three sources: AniList (GraphQL), a static CSV dump (MyAnimeList via
-Kaggle) and Jikan. **14,490 works** shown from 27,340 stored rows, 80% carrying a
-real synopsis, plus **19.2M user ratings** from 106k users. No recommendation
-models yet, by design — the ratings and the text are their fuel.
+**Status: Phase 3 in progress.** Six domains ingested end to end — anime, manga,
+books, music, movies and TV — from ten sources including AniList (GraphQL), TMDB,
+Open Library, MusicBrainz, goodbooks-10k and a static MyAnimeList dump. A full
+build is **~84,000 works** from ~105,000 stored rows (84% carrying a real
+synopsis), reconciled across sources and calibrated onto one popularity scale,
+plus **19.2M user ratings**. Two recommendation models are built and served at
+`/api/similar`: content-based text embeddings and item-item collaborative
+filtering. **724 tests**, ruff- and mypy-clean.
 
 ---
 
@@ -42,6 +45,10 @@ uv sync
 `uv sync` reads `uv.lock`, downloads a private CPython 3.12 into `%LOCALAPPDATA%\uv`,
 creates `.venv`, and installs exact pinned versions. Every dependency is a prebuilt
 wheel — nothing compiles, so no MSVC build tools are required.
+
+> On the secondary machine, if `uv sync` fails with `Acesso negado (os error 5)`
+> or an `os error 396` on `.venv`, that's OneDrive locking files — run
+> `$env:UV_LINK_MODE = "copy"` first. See [Where the data lives](#where-the-data-lives).
 
 ### 3. Configure
 
@@ -116,13 +123,18 @@ uv run python app.py --browser   # skip the webview, use the default browser
 uv run python app.py --no-ui     # serve only, for curl/httpie against the API
 ```
 
-### 6. Tests
+### 6. Tests and checks
 
 ```powershell
-uv run pytest
+uv run pytest          # 724 tests, none touching the network
+uv run ruff check .    # lint
+uv run mypy            # type check
 ```
 
-No test touches the network.
+Coverage is opt-in, so an everyday `pytest` stays fast: `uv run pytest --cov=recsys`.
+
+No test touches the network or `%LOCALAPPDATA%` — the whole suite runs from
+`tests/fixtures/`, so it needs no catalog and no credentials.
 
 ---
 
@@ -137,10 +149,25 @@ No test touches the network.
   logs\recsys.log    rotating log
 ```
 
-This is deliberate. The repo lives under a OneDrive-synced folder on the primary
-machine, and sync clients take file locks on SQLite WAL sidecars mid-write, which
-surfaces as random `database is locked` errors. `%LOCALAPPDATA%` is never synced.
-Override with `DATA_DIR` in `.env` if you want the data beside the code.
+This is deliberate. Loom is developed across two machines: a **primary** box
+where the full catalog and the 19.2M ratings are built (unrestricted — Kaggle and
+TMDB credentials, hours of ingest, gigabytes of DB), and a **secondary**,
+locked-down corporate Windows machine (no admin, TLS interception, OneDrive-synced
+home) used for code work. On that secondary machine the repo lives under a
+OneDrive-synced folder, and sync clients take file locks on SQLite WAL sidecars
+mid-write, which surfaces as random `database is locked` errors. `%LOCALAPPDATA%`
+is never synced. Override with `DATA_DIR` in `.env` if you want the data beside
+the code.
+
+The same OneDrive locking hits `.venv`, so on the secondary machine run `uv`
+with `UV_LINK_MODE=copy`, and pass `--no-sync` to `uv run` to skip the editable
+rebuild each command otherwise triggers:
+
+```powershell
+$env:UV_LINK_MODE = "copy"
+uv sync
+uv run --no-sync pytest
+```
 
 Consequence worth knowing: the catalog does **not** travel between machines. Each
 machine runs `bootstrap.py` once. That is the intended reproducibility story — the
@@ -150,7 +177,7 @@ repo reproduces the *catalog build*, not the catalog file.
 
 ## Corporate TLS interception
 
-On networks that terminate TLS at an inspecting proxy (the primary dev machine's is
+On networks that terminate TLS at an inspecting proxy (the secondary machine's is
 one), Python rejects the proxy's re-signed certificates because `ssl` uses certifi's
 bundle rather than the Windows certificate store, where the corporate CA actually
 lives. Symptom:
@@ -362,7 +389,7 @@ through `textContent` — catalog synopses are third-party text and never touch
 | 1 | Cross-source id linking | `external_ids` — already populated |
 | 2 | Entity resolution (same work, two sources) | new `links` table via a new migration |
 | 2 | Feature matrices | pyarrow → parquet under `DATA_DIR`, read from `items` |
-| 3 | Content-based / collaborative / hybrid models | new `recsys/models/` package; reads parquet, writes scores |
+| 3 | ~~Content-based and collaborative models~~ **done**; hybrid next | `recsys/models/`, served at `/api/similar` |
 | 3 | ~~User ratings and feedback~~ **done** | `ratings` table, migration 2, `ratings_mal_csv.py` |
 | 4 | Region-aware availability | `REGION` setting — already threaded through config |
 
@@ -380,6 +407,7 @@ worked around.
 | `GET /api/health` | liveness + item count; `app.py` polls this before opening the window |
 | `GET /api/items?domain=&q=&limit=&offset=` | `q` hits the FTS index, bm25-ranked |
 | `GET /api/items/{item_uid}` | `item_uid` is a path param — it contains `:` |
+| `GET /api/similar/{item_uid}?method=&domain=&k=` | k nearest works; `method=content` (text embeddings) or `cf` (ratings), optionally within one `domain`. Suppresses the work's own franchise unless `same_franchise=true` |
 | `GET /api/stats` | per-domain counts, sources, last successful ingest |
 
 Interactive docs at `/docs` while the server runs.
