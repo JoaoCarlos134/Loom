@@ -76,7 +76,7 @@ for what comes next.
 
 ```powershell
 uv sync                                       # install from uv.lock
-uv run pytest                                 # 622 tests, none touch the network
+uv run pytest                                 # 766 tests, none touch the network
 uv run python scripts/bootstrap.py            # init schema + run ingesters
 uv run python scripts/bootstrap.py --only anime_mal_csv --limit 100
 uv run python scripts/bootstrap.py --only anime_mal_ratings   # 19.2M ratings, ~75 s
@@ -157,12 +157,18 @@ indifferent to which kind they hold. Same three-step seam either way.
   throws out *Metropolis*, and a language filter mostly encodes a bias toward
   English. `tests/test_prune.py` pins the old-but-well-rated case.
 
-- **`prune.py` is the only code here that deletes.** Everything else upserts;
-  `link.py` hides duplicates without touching them and `popularity.py` writes a
-  second opinion beside the source datum. Pruning never runs as part of a normal
-  bootstrap, defaults to a dry run, and reports before it acts. After it runs,
-  every derived table -- `links`, `popularity_norm`, `works`, `relations` --
-  must be rebuilt; they point at deleted rows.
+- **`prune.py` is the only code that deletes *catalog* rows.** Everything else
+  upserts; `link.py` hides duplicates without touching them and `popularity.py`
+  writes a second opinion beside the source datum. Pruning never runs as part of
+  a normal bootstrap, defaults to a dry run, and reports before it acts. After
+  it runs, every derived table -- `links`, `popularity_norm`, `works`,
+  `relations` -- must be rebuilt; they point at deleted rows.
+
+  `db.delete_rating` is the one deletion outside it and is not the same act. The
+  rule above exists because derived tables point at catalog rows; nothing on
+  disk is derived from your ratings, and un-rating something has to actually
+  remove it, since there is no "hidden but present" state for a rating that
+  would mean anything.
 
 - **A paginated sweep is incomplete until it is partitioned.** AniList refuses
   to page past 5,000 entries into any listing and TMDB stops at 500 pages, in
@@ -190,6 +196,21 @@ indifferent to which kind they hold. Same three-step seam either way.
   An adaptation or a sequel is the opposite claim -- two different works, one
   story -- so the AniList relation edges get their own table. Never collapse
   them onto `links`, and never assume an edge's far side is in the catalog.
+
+- **Your ratings are resolved onto the work, not the row you clicked.**
+  `set_rating` runs the uid through `link.representative_uid` before storing it,
+  because `get_item` reaches every row of a work and the `(user_uid, item_uid)`
+  primary key cannot tell that `anime:anilist:5114` and `anime:mal:5114` are one
+  show. `rated_uids` resolves again on the way out -- not redundantly: relinking
+  moves representatives, and the embedding matrix holds only winners, so a
+  rating stranded on a loser would silently stop counting toward your profile.
+
+- **A taste profile counts what you rated at or above your own mean.** Not a
+  fixed bar on the 1-10 scale -- nobody shares one, and MAL's corpus mean of
+  7.59 says so. That single rule needs no special case: one rating is its own
+  mean and still builds a profile, and rating everything 8 counts all of it.
+  `models/profile.py` deliberately has no Rocchio negative term, because its
+  weight cannot be set from any measurement this project has.
 
 - **Ratings and listings use different uids; translate, never assume.** Every
   rating names `anime:mal:{id}`, but only 451 of the 6,598 rated rows *represent*

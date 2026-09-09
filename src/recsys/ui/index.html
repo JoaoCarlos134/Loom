@@ -13,6 +13,12 @@
       <h1>Loom</h1>
     </div>
 
+    <nav class="views" aria-label="View">
+      <button type="button" class="view-tab is-active" data-view="browse">Browse</button>
+      <button type="button" class="view-tab" data-view="library">Library</button>
+      <button type="button" class="view-tab" data-view="recommend">For you</button>
+    </nav>
+
     <div class="controls">
       <div class="search-wrap">
         <svg class="search-icon" viewBox="0 0 20 20" aria-hidden="true">
@@ -41,6 +47,8 @@
       <span id="result-count" class="count"></span>
       <span id="stats" class="stats"></span>
     </div>
+
+    <div id="notice" class="notice" hidden></div>
 
     <div id="grid" class="grid" aria-live="polite"></div>
 

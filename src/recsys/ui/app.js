@@ -19,10 +19,19 @@
     loading: document.getElementById("loading"),
     sentinel: document.getElementById("sentinel"),
     detail: document.getElementById("detail"),
-    detailBody: document.getElementById("detail-body")
+    detailBody: document.getElementById("detail-body"),
+    notice: document.getElementById("notice"),
+    tabs: Array.prototype.slice.call(document.querySelectorAll(".view-tab"))
   };
 
-  var state = { q: "", domain: "", offset: 0, total: 0, loading: false, done: false, seq: 0 };
+  var state = {
+    view: "browse", q: "", domain: "", offset: 0, total: 0,
+    loading: false, done: false, seq: 0
+  };
+
+  // Your ratings, by uid, so a card can show its score without a request per
+  // card. Kept in step by every write below rather than refetched.
+  var myRatings = Object.create(null);
 
   // ---- helpers ----------------------------------------------------------
 
@@ -46,10 +55,27 @@
     return typeof n === "number" ? n.toLocaleString() : "";
   }
 
-  function api(path) {
-    return fetch(path, { headers: { Accept: "application/json" } }).then(function (r) {
-      if (!r.ok) throw new Error("HTTP " + r.status + " for " + path);
-      return r.json();
+  function fmtScore(n) {
+    // Whole scores are what the buttons produce; keep them whole.
+    return n % 1 === 0 ? String(n) : n.toFixed(1);
+  }
+
+  function api(path, options) {
+    var opts = options || {};
+    var init = { method: opts.method || "GET", headers: { Accept: "application/json" } };
+    if (opts.body !== undefined) {
+      init.headers["Content-Type"] = "application/json";
+      init.body = JSON.stringify(opts.body);
+    }
+    return fetch(path, init).then(function (r) {
+      if (r.ok) return r.status === 204 ? null : r.json();
+      // The API explains itself in `detail` -- "run scripts/embed.py", "rate
+      // something first" -- and those are the messages worth showing.
+      return r.json().catch(function () { return {}; }).then(function (body) {
+        var err = new Error(body.detail || ("HTTP " + r.status + " for " + path));
+        err.status = r.status;
+        throw err;
+      });
     });
   }
 
@@ -58,6 +84,7 @@
   function makeCard(item) {
     var card = el("button", "card");
     card.type = "button";
+    card.dataset.uid = item.item_uid;
     card.setAttribute("aria-label", item.title);
 
     var thumb = el("div", "thumb");
@@ -77,6 +104,7 @@
       thumb.appendChild(el("span", "rating", item.mean_rating.toFixed(1)));
     }
     card.appendChild(thumb);
+    paintMine(card, myRatings[item.item_uid]);
 
     var body = el("div", "card-body");
     body.appendChild(el("div", "card-title", item.title));
@@ -99,10 +127,30 @@
     return card;
   }
 
-  function renderPage(items, append) {
+  /* Deliberately a second badge rather than replacing the catalog's score:
+   * what everyone thinks and what you think are different facts. */
+  function paintMine(card, score) {
+    var thumb = card.querySelector(".thumb");
+    var badge = thumb.querySelector(".rating-mine");
+    if (typeof score !== "number") {
+      if (badge) badge.remove();
+      return;
+    }
+    if (badge) badge.textContent = "you " + fmtScore(score);
+    else thumb.appendChild(el("span", "rating rating-mine", "you " + fmtScore(score)));
+  }
+
+  // A write happens in the dialog, over a grid that is still on screen behind
+  // it. Repainting the one card beats reloading the page under the user.
+  function repaintCard(uid, score) {
+    var card = els.grid.querySelector('[data-uid="' + CSS.escape(uid) + '"]');
+    if (card) paintMine(card, score);
+  }
+
+  function renderPage(rows, append) {
     if (!append) els.grid.replaceChildren();
     var frag = document.createDocumentFragment();
-    items.forEach(function (item) { frag.appendChild(makeCard(item)); });
+    rows.forEach(function (row) { frag.appendChild(makeCard(row.item)); });
     els.grid.appendChild(frag);
   }
 
@@ -120,11 +168,73 @@
 
   function buildUrl() {
     var p = new URLSearchParams();
-    if (state.q) p.set("q", state.q);
     if (state.domain) p.set("domain", state.domain);
+
+    if (state.view === "recommend") {
+      // One shot, not a page: the profile ranks the whole catalog at once and
+      // the tail of a taste ranking is not worth scrolling into.
+      p.set("k", "40");
+      return "/api/recommend?" + p.toString();
+    }
     p.set("limit", String(PAGE_SIZE));
     p.set("offset", String(state.offset));
+    if (state.view === "library") return "/api/library?" + p.toString();
+    if (state.q) p.set("q", state.q);
     return "/api/items?" + p.toString();
+  }
+
+  /* The three views answer with three shapes. Normalising here keeps one
+   * rendering path: rows of { item, rating? }, a total, and whether more of
+   * them exist. */
+  function normalise(body) {
+    if (state.view === "recommend") {
+      return {
+        rows: body.neighbours.map(function (n) { return { item: n.item }; }),
+        total: body.neighbours.length,
+        more: false,
+        notice: recommendNotice(body)
+      };
+    }
+    if (state.view === "library") {
+      body.items.forEach(function (r) { myRatings[r.item.item_uid] = r.rating; });
+      return {
+        rows: body.items.map(function (r) { return { item: r.item, rating: r.rating }; }),
+        total: body.total,
+        more: true,
+        notice: ""
+      };
+    }
+    return {
+      rows: body.items.map(function (i) { return { item: i }; }),
+      total: body.total,
+      more: true,
+      notice: ""
+    };
+  }
+
+  function recommendNotice(body) {
+    var text = "From " + fmtNumber(body.n_rated) + " rating" +
+      (body.n_rated === 1 ? "" : "s");
+    // The gap is the caveat on the whole page: a profile built from three of
+    // your ninety ratings is not the profile ninety suggests. Worded without
+    // naming a cause, because n_used folds two together -- ratings the matrix
+    // could not place, and ratings below your own average.
+    if (body.n_used !== body.n_rated) {
+      text += "  ·  " + fmtNumber(body.n_used) + " shaped this";
+    }
+    if (body.n_suppressed) {
+      text += "  ·  " + fmtNumber(body.n_suppressed) + " same-franchise hidden";
+    }
+    return text;
+  }
+
+  function showEmpty(title, body) {
+    els.grid.replaceChildren();
+    els.count.textContent = "";
+    els.notice.hidden = true;
+    els.empty.hidden = false;
+    els.empty.querySelector(".empty-title").textContent = title;
+    els.empty.querySelector(".empty-body").textContent = body;
   }
 
   function load(append) {
@@ -136,23 +246,29 @@
     var seq = ++state.seq;
 
     api(buildUrl())
-      .then(function (page) {
+      .then(function (body) {
         if (seq !== state.seq) return;
+        var page = normalise(body);
         state.total = page.total;
-        state.offset += page.items.length;
-        state.done = state.offset >= page.total || page.items.length === 0;
+        state.offset += page.rows.length;
+        state.done = !page.more || state.offset >= page.total || page.rows.length === 0;
 
-        renderPage(page.items, append);
+        renderPage(page.rows, append);
         renderCount();
+        els.notice.textContent = page.notice;
+        els.notice.hidden = !page.notice;
         els.empty.hidden = page.total !== 0;
+        if (page.total === 0) emptyForView();
       })
       .catch(function (err) {
         if (seq !== state.seq) return;
-        els.grid.replaceChildren();
-        els.count.textContent = "";
-        els.empty.hidden = false;
-        els.empty.querySelector(".empty-title").textContent = "Could not reach the API";
-        els.empty.querySelector(".empty-body").textContent = String(err.message || err);
+        // 409 and 503 on /api/recommend are not failures, they are the app
+        // telling you what is missing -- rate something, or build the matrix.
+        if (err.status === 409 || err.status === 503) {
+          showEmpty("Nothing to recommend yet", String(err.message));
+        } else {
+          showEmpty("Could not reach the API", String(err.message || err));
+        }
       })
       .finally(function () {
         if (seq === state.seq) {
@@ -160,6 +276,18 @@
           els.loading.hidden = true;
         }
       });
+  }
+
+  function emptyForView() {
+    if (state.view === "library") {
+      showEmpty("Nothing rated yet",
+        "Open anything in Browse and give it a score. Your ratings are what " +
+        "For you is built from.");
+    } else if (state.view === "browse") {
+      showEmpty("Nothing here yet",
+        "Run uv run python scripts/bootstrap.py to populate the catalog, or " +
+        "adjust your search.");
+    }
   }
 
   function reload() {
@@ -187,8 +315,91 @@
     dl.appendChild(el("dd", null, value));
   }
 
+  /* The write path, and the only control in the app that changes anything.
+   * Ten buttons rather than a slider or stars: the scale is 1-10 because that
+   * is what every ingester rescales `mean_rating` onto and what MAL's ratings
+   * use, and a control that can only produce whole numbers on that scale
+   * cannot quietly invent a 7.3. */
+  function makeRatingControl(uid, current) {
+    var wrap = el("div", "rate");
+    wrap.appendChild(el("span", "rate-label", "Your rating"));
+
+    var row = el("div", "rate-buttons");
+    var buttons = [];
+
+    function paint(score) {
+      buttons.forEach(function (b, i) {
+        b.classList.toggle("is-set", typeof score === "number" && i + 1 <= score);
+      });
+      clear.hidden = typeof score !== "number";
+    }
+
+    function send(score) {
+      var request = score === null
+        ? api("/api/ratings/" + encodeURIComponent(uid), { method: "DELETE" })
+        : api("/api/ratings/" + encodeURIComponent(uid), {
+            method: "PUT", body: { rating: score }
+          });
+      row.classList.add("is-busy");
+      return request.then(function (rated) {
+        // The API resolves a rating onto the row representing the work, which
+        // may not be the uid opened -- so paint what came back, not what was
+        // sent, and key the cache by the same uid the listing uses.
+        if (rated) {
+          myRatings[rated.item.item_uid] = rated.rating;
+          myRatings[uid] = rated.rating;
+          paint(rated.rating);
+          repaintCard(uid, rated.rating);
+          repaintCard(rated.item.item_uid, rated.rating);
+        } else {
+          delete myRatings[uid];
+          paint(null);
+          repaintCard(uid, null);
+        }
+        // Browse is a catalog listing and a rating does not change it, so only
+        // its badge is repainted. The other two views *are* lists of what you
+        // rated, so their membership just changed.
+        if (state.view === "library" || state.view === "recommend") reload();
+      }).catch(function (err) {
+        wrap.appendChild(el("p", "rate-error", String(err.message || err)));
+      }).finally(function () {
+        row.classList.remove("is-busy");
+      });
+    }
+
+    for (var i = 1; i <= 10; i++) {
+      (function (score) {
+        var b = el("button", "rate-btn", String(score));
+        b.type = "button";
+        b.setAttribute("aria-label", "Rate " + score + " out of 10");
+        b.addEventListener("click", function () { send(score); });
+        buttons.push(b);
+        row.appendChild(b);
+      })(i);
+    }
+    wrap.appendChild(row);
+
+    var clear = el("button", "rate-clear", "Clear");
+    clear.type = "button";
+    clear.hidden = true;
+    clear.addEventListener("click", function () { send(null); });
+    wrap.appendChild(clear);
+
+    paint(current);
+    return wrap;
+  }
+
   function openDetail(uid) {
-    api("/api/items/" + encodeURIComponent(uid)).then(function (item) {
+    // 404 from /api/ratings means "not rated", which is an answer rather than
+    // an error -- so it resolves to null instead of rejecting the dialog.
+    var rating = api("/api/ratings/" + encodeURIComponent(uid))
+      .then(function (r) { return r.rating; })
+      .catch(function () { return null; });
+
+    Promise.all([api("/api/items/" + encodeURIComponent(uid)), rating])
+      .then(function (both) {
+      var item = both[0];
+      var mine = both[1];
       var inner = el("div", "detail-inner");
 
       if (item.image_url) {
@@ -209,6 +420,8 @@
           (item.n_ratings ? " (" + fmtNumber(item.n_ratings) + " ratings)" : ""));
       }
       main.appendChild(el("p", "detail-sub", sub.join("  ·  ")));
+
+      main.appendChild(makeRatingControl(item.item_uid, mine));
 
       if (item.description) main.appendChild(el("p", "detail-desc", item.description));
 
@@ -250,6 +463,25 @@
 
   // ---- wiring -----------------------------------------------------------
 
+  function setView(view) {
+    if (state.view === view) return;
+    state.view = view;
+    els.tabs.forEach(function (t) {
+      t.classList.toggle("is-active", t.dataset.view === view);
+    });
+    // Search is a catalog query; the library and the profile are not searchable
+    // and pretending otherwise would silently ignore what was typed.
+    els.search.disabled = view !== "browse";
+    els.search.placeholder = view === "browse"
+      ? "Search titles and descriptions"
+      : "Search is for Browse";
+    reload();
+  }
+
+  els.tabs.forEach(function (tab) {
+    tab.addEventListener("click", function () { setView(tab.dataset.view); });
+  });
+
   els.search.addEventListener("input", debounce(function (e) {
     state.q = e.target.value.trim();
     reload();
@@ -267,10 +499,27 @@
 
   if ("IntersectionObserver" in window) {
     new IntersectionObserver(function (entries) {
-      if (entries[0].isIntersecting) load(true);
+      if (entries[0].isIntersecting && state.view !== "recommend") load(true);
     }, { rootMargin: "400px" }).observe(els.sentinel);
+  }
+
+  /* Your scores, so a Browse card can say "you 8" without a request per card.
+   * Every page of the library, not the first: the badge is most useful on
+   * things you rated long ago and have half-forgotten, which are exactly the
+   * ones a single first page would miss. All local, and it does not block the
+   * first render -- a badge that appears a moment late is better than a grid
+   * that waits for one. */
+  function primeRatings(offset) {
+    return api("/api/library?limit=200&offset=" + (offset || 0)).then(function (page) {
+      page.items.forEach(function (r) { myRatings[r.item.item_uid] = r.rating; });
+      var seen = (offset || 0) + page.items.length;
+      if (page.items.length && seen < page.total) return primeRatings(seen);
+      // Cards already on screen were built before the scores arrived.
+      if (state.view === "browse" && seen) reload();
+    }).catch(function () { /* badges are decoration; failure is not fatal */ });
   }
 
   load(false);
   loadStats();
+  primeRatings(0);
 })();

@@ -10,7 +10,7 @@ Architecture and rationale live in `README.md`; Phase 0's closing state is in
 
 **Phases 0 through 2 are complete**, and both halves of Phase 3's model layer
 are built. Schema, ingest, API, UI, desktop window, two recommendation models
-and 681 tests, across six populated domains with a ratings matrix behind the
+and 766 tests, across six populated domains with a ratings matrix behind the
 largest.
 
 ```
@@ -27,7 +27,7 @@ catalog        83,981 works      six domains, from 105,161 stored rows
 synopsis coverage  84.4%         of works, across all six domains
 relations      57,453 edges      16,524 adaptations + 27,928 franchise
 ratings    19,172,125 ratings    106,402 users x 6,598 anime, scores 1-10
-tests             681            none touch the network or %LOCALAPPDATA%
+tests             766            none touch the network or %LOCALAPPDATA%
 ```
 
 Two recommendation models: content embeddings and item-item CF, both
@@ -55,10 +55,10 @@ reachable at `/api/similar/{item_uid}`.
 | **3** | Content-based similarity | `recsys/models/` -- embeddings + evaluation | **done** |
 | **3** | Collaborative models (within-domain) | `models/collaborative.py`, `/api/similar?method=cf` | **done** |
 | **3** | Hybrid: blend content and CF into one ranking | `recsys/models/` -- both halves now exist | next |
-| **3** | Your own library — rate things | `ratings` table, `local:` user namespace — no migration | **the product goal** |
+| **3** | Your own library — rate things | `ratings` table, `local:` user namespace — no migration | **done** |
 | **3** | Import an existing library (MAL/AniList export) | new file in `ingest/`, writes `local:` rows | solves cold start |
 | **3** | Canonical tag vocabulary | authored file in repo + feature-build layer | bridge, step 1 |
-| **3** | Cross-domain profile scoring | `recsys/models/` — attributes, not titles | **the bridge** |
+| **3** | Cross-domain profile scoring | `models/profile.py`, `/api/recommend` | **done** |
 | **4** | Implicit signals (views, dismissals) | new `events` table via a new migration | decide explicitly |
 | **4** | Similarity graph view | `/api/similar/{uid}` exists; needs the canvas renderer | half |
 | **4** | Region-aware availability | `REGION` setting — already threaded through | — |
@@ -557,18 +557,81 @@ the missing 8,000 items are exactly the interesting cases. `UserAnimeList.csv`
 (80M entries, full catalog, unix-epoch dates) is the upgrade path when that
 matters — the loader already reads both, via `MAL_RATINGS_FILENAME`.
 
+## Done: Loom can be told what you like
+
+The thing every model above was infrastructure for. Until now the API had no
+write route of any kind and the `local:` user namespace appeared in no file;
+rating a work, keeping a library, and being recommended things because of it
+are all live, and none of it needed a migration -- the `ratings` table has been
+sitting there since migration 2 with exactly one reader.
+
+```
+PUT    /api/ratings/{item_uid}   rate a work 1-10, idempotent
+GET    /api/ratings/{item_uid}   what you said about one work
+DELETE /api/ratings/{item_uid}   forget it
+GET    /api/library              what you have rated, newest first
+GET    /api/recommend            works nearest your taste, in any domain
+```
+
+### The uid problem, which is the whole of the hard part
+
+A work has several rows and `get_item` reaches all of them, so "rate this"
+is ambiguous in a way "show me this" is not. Both ends are resolved through
+`link.representative_uid`:
+
+* **On write**, because the `(user_uid, item_uid)` primary key cannot tell that
+  `anime:anilist:5114` and `anime:mal:5114` are one show. Without resolution,
+  rating a work from two different rows stores two opinions of it.
+* **On read**, because relinking moves representatives and the embedding matrix
+  holds only winners (`text.work_documents` selects `is_primary = 1`). A rating
+  left on a row that has since lost the primary election contributes nothing to
+  a profile and raises nothing -- the same silent failure
+  `CollaborativeIndex.similar_to` translates to avoid.
+
+### The taste profile, and the constant that is not in it
+
+`models/profile.py` is the centroid of the works you rated **at or above your
+own mean**, L2-normalised, queried against the same matrix `/api/similar` uses.
+
+The threshold is your own mean rather than a fixed point on the 1-10 scale
+because nobody shares one -- MAL's corpus mean of 7.59 is the evidence that "5"
+is not the middle of how people actually rate. That one rule also removes every
+special case a threshold usually needs: a single rating is its own mean, so a
+profile exists after one click; rating ten things 8 puts all ten at the mean, so
+all ten count. There is no `n >= 2` guard in the module because nothing needs
+one.
+
+**What is deliberately absent is a Rocchio negative term.** Subtracting a
+centroid of what you disliked might well help, and it introduces a weight that
+cannot be set from any measurement this project has -- adaptation edges score
+the content model, and nothing comparable scores a taste profile. Excluding what
+you rated below your average is the weaker claim the evidence supports.
+
+### Measured on a synthetic catalog, since this machine has none
+
+Ten works across four domains with hand-written vectors, driven through the real
+app. Rating *Steins;Gate* 9 and nothing else returns *Primer*, *Dark* and
+*Idoru* -- and suppresses *Steins;Gate 0*, the franchise failure `/api/similar`
+already had. Re-rating *Cowboy Bebop* from 4 to 10 swings the profile to
+*Sanjuro*, because at 4 it sat below the mean and was dropped while at 10 it
+dominates. `n_rated` and `n_used` are both reported so the page can say how
+thin the profile actually is.
+
+A real measurement waits on a real library, which waits on a catalog build.
+
 ## Next step, and why
 
-**Blend the two models, then open a write path.** Both halves now exist and
-disagree usefully -- `content` reaches *Steins;Gate 0* and *Robotics;Notes* from
-*Steins;Gate*, `cf` reaches *Fullmetal Alchemist* and *Fate/Zero* -- but nothing
-combines them, and a caller has to pick a method. A hybrid ranking is the
-obvious next model.
+**Blend the two models.** `content` reaches *Steins;Gate 0* and *Robotics;Notes*
+from *Steins;Gate*, `cf` reaches *Fullmetal Alchemist* and *Fate/Zero* -- they
+disagree usefully, nothing combines them, and a caller still has to pick a
+method. The obstacle is not the plumbing: content cosine and CF's *shrunk*
+cosine are not on one scale, so a weighted sum has no defensible constant
+without a held-out set to fit it on. Rank fusion is scale-free and can ship
+before the data exists; a tuned weight cannot.
 
-Behind it sits the thing everything else is infrastructure for: **Loom still
-cannot be told what *you* like.** There is no POST route anywhere in the API and
-the `local:` user namespace appears in no code. That is the product goal, it
-needs no migration, and every model above is waiting for it.
+Then **importing a library** (a MAL or AniList export, one new file in
+`ingest/` writing `local:` rows), which is what makes the profile above worth
+anything on the first run rather than the fiftieth rating.
 
 ---
 

@@ -10,7 +10,9 @@ build is **~84,000 works** from ~105,000 stored rows (84% carrying a real
 synopsis), reconciled across sources and calibrated onto one popularity scale,
 plus **19.2M user ratings**. Two recommendation models are built and served at
 `/api/similar`: content-based text embeddings and item-item collaborative
-filtering. **724 tests**, ruff- and mypy-clean.
+filtering. You can rate things yourself, and `/api/recommend` will find works
+nearest your taste **in a domain you have never rated in**. **766 tests**,
+ruff- and mypy-clean.
 
 ---
 
@@ -126,7 +128,7 @@ uv run python app.py --no-ui     # serve only, for curl/httpie against the API
 ### 6. Tests and checks
 
 ```powershell
-uv run pytest          # 724 tests, none touching the network
+uv run pytest          # 766 tests, none touching the network
 uv run ruff check .    # lint
 uv run mypy            # type check
 ```
@@ -200,6 +202,7 @@ app.py                    pywebview window  ──┐
 src/recsys/api/server.py  FastAPI  ───────────┘
               routes.py   /api/health /api/items /api/items/{uid}
                           /api/similar/{uid} /api/stats
+                          /api/ratings/{uid} /api/library /api/recommend
               ui/         plain HTML + CSS + vanilla JS, served as static files
 
 src/recsys/db.py          SQLite: items + items_fts (FTS5) + ratings + links
@@ -216,6 +219,7 @@ src/recsys/models/       reads the catalog, writes derived artifacts
               similarity.py  brute-force nearest neighbours
               evaluate.py    recall against known adaptation links
               collaborative.py  item-item CF over 19.2M ratings (parquet)
+              profile.py     your ratings -> one taste vector
            schemas.py     UnifiedItem — the one row shape all domains collapse into
            config.py      pydantic-settings, the only reader of the environment
 
@@ -391,6 +395,7 @@ through `textContent` — catalog synopses are third-party text and never touch
 | 2 | Feature matrices | pyarrow → parquet under `DATA_DIR`, read from `items` |
 | 3 | ~~Content-based and collaborative models~~ **done**; hybrid next | `recsys/models/`, served at `/api/similar` |
 | 3 | ~~User ratings and feedback~~ **done** | `ratings` table, migration 2, `ratings_mal_csv.py` |
+| 3 | ~~Your own library, and cross-domain profile scoring~~ **done** | `models/profile.py`, `/api/ratings` + `/api/library` + `/api/recommend` |
 | 4 | Region-aware availability | `REGION` setting — already threaded through config |
 
 The invariant: **adding a domain must not require editing `db.py`, `routes.py`,
@@ -409,9 +414,19 @@ worked around.
 | `GET /api/items/{item_uid}` | `item_uid` is a path param — it contains `:` |
 | `GET /api/similar/{item_uid}?method=&domain=&k=` | k nearest works; `method=content` (text embeddings) or `cf` (ratings), optionally within one `domain`. Suppresses the work's own franchise unless `same_franchise=true` |
 | `GET /api/stats` | per-domain counts, sources, last successful ingest |
+| `PUT /api/ratings/{item_uid}` | rate a work 1-10. Idempotent — rating it again is a correction. Resolved onto the row representing the work, so rating it from two of its rows is one rating |
+| `GET /api/ratings/{item_uid}` | your score for one work, or 404 |
+| `DELETE /api/ratings/{item_uid}` | forget it. The only deletion outside `prune.py` |
+| `GET /api/library?domain=&limit=&offset=` | what you have rated, newest first |
+| `GET /api/recommend?domain=&k=` | works nearest your taste. 409 if you have rated nothing the matrix can place, 503 if the matrix is unbuilt |
 
 Interactive docs at `/docs` while the server runs.
 
-`ratings` is not exposed over the API. Nothing reads it yet — it exists so
-Phase 3's models have something to train on, and a route would be a guess at
-what they will need.
+The rating routes are the only ones that write. Everything else reports what
+sources said; these record what *you* say, which is the one thing no ingester
+can supply. `/api/recommend` is `/api/similar` with the query replaced by a
+profile — so asking for books having rated only anime is the cross-domain
+bridge doing the job it was built for, and it is the thing collaborative
+filtering structurally cannot do here, since all 19.2M corpus ratings are
+anime.
+

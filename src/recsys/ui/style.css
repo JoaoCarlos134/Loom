@@ -203,6 +203,12 @@ main { padding: 20px 24px 48px; }
   color: var(--star);
 }
 
+.rating-mine {
+  top: 34px;
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+
 .card-body {
   padding: 10px 11px 12px;
   display: flex;
@@ -304,6 +310,89 @@ code {
 .kv dt { color: var(--text-faint); }
 .kv dd { margin: 0; }
 .kv a { color: var(--accent); }
+
+/* ---------- views ---------- */
+
+.views { display: flex; gap: 2px; flex: none; }
+
+.view-tab {
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--text-dim);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-s);
+  padding: 8px 13px;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+}
+
+.view-tab:hover { color: var(--text); background: var(--bg-elev); }
+
+.view-tab.is-active {
+  color: var(--text);
+  background: var(--bg-elev-2);
+  border-color: var(--border);
+}
+
+.notice {
+  margin: -6px 0 16px;
+  font-size: 13px;
+  color: var(--text-dim);
+  font-family: var(--mono);
+}
+
+/* ---------- rating control ---------- */
+
+.rate { margin: 4px 0 16px; }
+
+.rate-label {
+  display: block;
+  margin-bottom: 7px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.rate-buttons { display: flex; gap: 4px; flex-wrap: wrap; }
+.rate-buttons.is-busy { opacity: 0.5; pointer-events: none; }
+
+.rate-btn {
+  font-family: var(--mono);
+  font-size: 13px;
+  width: 30px;
+  height: 30px;
+  color: var(--text-dim);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+
+.rate-btn:hover { border-color: var(--border-strong); color: var(--text); }
+
+.rate-btn.is-set {
+  color: #0e1014;
+  background: var(--star);
+  border-color: var(--star);
+}
+
+.rate-clear {
+  margin-top: 8px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-faint);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.rate-clear:hover { color: var(--text-dim); }
+.rate-error { color: #f2777a; font-size: 12px; margin: 8px 0 0; }
 
 @media (max-width: 560px) {
   .topbar { padding: 12px 16px; }

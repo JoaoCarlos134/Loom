@@ -53,6 +53,14 @@ def make_user_uid(source: str, user_id: str) -> str:
     return f"{source}:{user_id}"
 
 
+#: You. Loom is a local desktop app with no accounts, so the person using it is
+#: a constant rather than a session -- but it is namespaced through
+#: ``make_user_uid`` like every other user id, because your ratings share the
+#: ``ratings`` table with MAL's 106,402 users and a bare ``you`` would be a MAL
+#: username collision waiting to happen.
+LOCAL_USER_UID = make_user_uid("local", "you")
+
+
 class Creator(BaseModel):
     """A person or organisation attached to an item.
 
@@ -255,6 +263,56 @@ class SimilarPage(BaseModel):
     item_uid: str
     domain: str | None = None
     method: str = "content"
+    n_suppressed: int = 0
+    neighbours: list[SimilarItem]
+
+
+class RatingIn(BaseModel):
+    """A rating you are setting on a work.
+
+    1-10, the scale every ingester already rescales ``mean_rating`` onto and
+    the one MAL's 19.2M ratings use -- so your scores and the corpus's are
+    directly comparable rather than needing a second calibration the way raw
+    ``popularity`` did.
+    """
+
+    rating: float = Field(ge=1.0, le=10.0)
+
+
+class RatedItem(BaseModel):
+    """One entry in your library: your score, plus the catalog row it is on."""
+
+    rating: float
+    rated_at: datetime | None = None
+    item: UnifiedItem
+
+
+class LibraryPage(BaseModel):
+    """Paginated /api/library response -- the things you have rated."""
+
+    total: int
+    limit: int
+    offset: int
+    items: list[RatedItem]
+
+
+class RecommendPage(BaseModel):
+    """/api/recommend response -- works nearest your taste, not near one item.
+
+    ``n_rated`` and ``n_used`` are reported rather than hidden because they are
+    the difference between a recommendation and a coin toss: a profile built
+    from two ratings is not the same claim as one built from two hundred.
+
+    ``n_used`` is how many of those ratings actually shaped the profile -- the
+    ones the embedding matrix could place *and* that sat at or above your own
+    average. Two causes, one number, and they are not distinguishable from the
+    outside: a caller can say the profile is thinner than the rating count
+    suggests, but not why.
+    """
+
+    domain: str | None = None
+    n_rated: int
+    n_used: int
     n_suppressed: int = 0
     neighbours: list[SimilarItem]
 

@@ -22,7 +22,7 @@ from typing import Any
 
 from recsys.config import get_settings
 from recsys.log import get_logger
-from recsys.schemas import UnifiedItem
+from recsys.schemas import LOCAL_USER_UID, UnifiedItem
 
 log = get_logger(__name__)
 
@@ -338,6 +338,146 @@ def upsert_ratings(
     with conn:  # single transaction
         conn.executemany(_UPSERT_RATING_SQL, rows)
     return len(rows)
+
+
+def set_rating(
+    conn: sqlite3.Connection,
+    item_uid: str,
+    rating: float,
+    *,
+    user_uid: str = LOCAL_USER_UID,
+    rated_at: str | None = None,
+) -> str:
+    """Record what you think of a work. Returns the uid actually written.
+
+    The uid is resolved to the row that *represents* the work before it is
+    stored. A work has several rows and ``get_item`` reaches every one of them
+    by uid, so without this, rating ``anime:anilist:5114`` and then
+    ``anime:mal:5114`` would store two ratings of one work -- the primary key
+    cannot collapse them, because it is looking at two different uids. Resolving
+    first makes rating the same work twice an update, which is what a person
+    doing it means.
+    """
+    from recsys.link import representative_uid
+
+    uid = representative_uid(conn, item_uid)
+    upsert_ratings(conn, [(user_uid, uid, float(rating), rated_at or datetime.now(UTC).isoformat())])
+    return uid
+
+
+def delete_rating(
+    conn: sqlite3.Connection, item_uid: str, *, user_uid: str = LOCAL_USER_UID
+) -> bool:
+    """Forget a rating. True if there was one to forget.
+
+    The one deletion outside ``prune.py``, and it is not the same act: pruning
+    removes catalog rows that derived tables point at, which is why it is
+    hedged behind a dry run. A rating is your own datum and nothing is derived
+    from it on disk, so un-rating something has to actually remove it -- there
+    is no "hidden but present" state for a rating that would mean anything.
+
+    Resolves the uid exactly as :func:`set_rating` wrote it, so un-rating works
+    when you pass a different row of the same work than the one you rated.
+    """
+    from recsys.link import representative_uid
+
+    with conn:
+        cur = conn.execute(
+            "DELETE FROM ratings WHERE user_uid = ? AND item_uid = ?",
+            (user_uid, representative_uid(conn, item_uid)),
+        )
+    return cur.rowcount > 0
+
+
+def get_rating(
+    conn: sqlite3.Connection, item_uid: str, *, user_uid: str = LOCAL_USER_UID
+) -> tuple[float, str | None] | None:
+    """Your score for a work and when you set it, or ``None`` if you have not.
+
+    Resolves the uid the way :func:`set_rating` stored it, so opening any row
+    of a work shows the rating you gave through any other.
+    """
+    from recsys.link import representative_uid
+
+    row = conn.execute(
+        "SELECT rating, rated_at FROM ratings WHERE user_uid = ? AND item_uid = ?",
+        (user_uid, representative_uid(conn, item_uid)),
+    ).fetchone()
+    return None if row is None else (float(row["rating"]), row["rated_at"])
+
+
+def query_ratings(
+    conn: sqlite3.Connection,
+    *,
+    user_uid: str = LOCAL_USER_UID,
+    domain: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[int, list[tuple[float, str | None, UnifiedItem]]]:
+    """Your library -- ratings joined to the catalog rows they name.
+
+    Newest first, because a library is read as a record of what you have been
+    doing lately rather than as a ranking.
+
+    An inner join, so a rating pointing at a row that is not in the catalog --
+    pruned since, or never ingested -- does not appear. That is a real case:
+    the ratings table also holds 19.2M MAL ratings covering anime this catalog
+    may not carry, and ``user_uid`` is the only thing separating them.
+    """
+    where = ["r.user_uid = ?"]
+    params: list[Any] = [user_uid]
+    if domain:
+        where.append("i.domain = ?")
+        params.append(domain)
+    tail = " WHERE " + " AND ".join(where)
+
+    total = conn.execute(
+        f"SELECT COUNT(*) FROM ratings r JOIN items i ON i.item_uid = r.item_uid{tail}", params
+    ).fetchone()[0]
+    rows = conn.execute(
+        f"""SELECT r.rating AS my_rating, r.rated_at AS my_rated_at, {_SELECT_COLS}
+            FROM ratings r JOIN items i ON i.item_uid = r.item_uid{tail}
+            ORDER BY r.rated_at DESC, i.title ASC LIMIT ? OFFSET ?""",
+        [*params, limit, offset],
+    ).fetchall()
+
+    # `my_*` are this query's own columns riding along beside the item's;
+    # UnifiedItem forbids extras, so they come off before it sees the row.
+    items = fill_from_siblings(
+        conn,
+        [
+            UnifiedItem.from_row({k: v for k, v in dict(r).items() if not k.startswith("my_")})
+            for r in rows
+        ],
+    )
+    return int(total), [
+        (float(r["my_rating"]), r["my_rated_at"], item) for r, item in zip(rows, items, strict=True)
+    ]
+
+
+def rated_uids(
+    conn: sqlite3.Connection, *, user_uid: str = LOCAL_USER_UID
+) -> dict[str, float]:
+    """Every work you have rated, in listing-space uids, mapped to your score.
+
+    Translated through ``links`` again on the way out -- not because
+    :func:`set_rating` failed to, but because relinking moves representatives.
+    A rating written before the linker last ran can name a row that has since
+    lost the primary election, and the embedding matrix holds only winners
+    (``text.work_documents`` selects ``is_primary = 1``). Left untranslated such
+    a rating would contribute nothing to a taste profile and raise nothing --
+    the same silent failure ``CollaborativeIndex.similar_to`` translates to
+    avoid.
+
+    Two ratings that drift onto one representative collapse to the later score,
+    which is what re-rating a work means anyway.
+    """
+    from recsys.link import representative_uid
+
+    rows = conn.execute(
+        "SELECT item_uid, rating FROM ratings WHERE user_uid = ? ORDER BY rated_at", (user_uid,)
+    ).fetchall()
+    return {representative_uid(conn, r["item_uid"]): float(r["rating"]) for r in rows}
 
 
 def start_ingest_run(conn: sqlite3.Connection, source: str, domain: str) -> int:

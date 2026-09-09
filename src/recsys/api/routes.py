@@ -9,23 +9,33 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from recsys import __version__
 from recsys.config import Settings, get_settings
 from recsys.db import (
     count_items,
+    delete_rating,
     domain_stats,
     get_item,
+    get_rating,
     last_ingest_at,
     query_items,
+    query_ratings,
+    rated_uids,
+    set_rating,
 )
+from recsys.models.profile import build_profile
 from recsys.relations import franchise_representatives
 from recsys.schemas import (
     DOMAINS,
     DomainStats,
     Health,
     ItemsPage,
+    LibraryPage,
+    RatedItem,
+    RatingIn,
+    RecommendPage,
     SimilarItem,
     SimilarPage,
     Stats,
@@ -78,6 +88,18 @@ Conn = Annotated[sqlite3.Connection, Depends(db_conn)]
 Cfg = Annotated[Settings, Depends(get_settings)]
 
 
+def _validated_domain(domain: str | None) -> str | None:
+    """Normalise and check a ``domain`` query parameter. ``None`` means all."""
+    if domain is None:
+        return None
+    domain = domain.strip().lower()
+    if domain in ("", "all"):
+        return None
+    if domain not in DOMAINS:
+        raise HTTPException(422, f"unknown domain {domain!r}; expected one of {list(DOMAINS)}")
+    return domain
+
+
 @router.get("/health", response_model=Health)
 def health(conn: Conn) -> Health:
     """Liveness probe. app.py polls this before opening the desktop window."""
@@ -96,13 +118,7 @@ def list_items(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> ItemsPage:
-    if domain is not None:
-        domain = domain.strip().lower()
-        if domain in ("", "all"):
-            domain = None
-        elif domain not in DOMAINS:
-            raise HTTPException(422, f"unknown domain {domain!r}; expected one of {list(DOMAINS)}")
-
+    domain = _validated_domain(domain)
     q = q.strip() if q else None
     total, items = query_items(conn, domain=domain, q=q, limit=limit, offset=offset)
     return ItemsPage(total=total, limit=limit, offset=offset, items=items)
@@ -145,12 +161,7 @@ def similar(
     """
     if method not in ("content", "cf"):
         raise HTTPException(422, f"unknown method {method!r}; expected 'content' or 'cf'")
-    if domain is not None:
-        domain = domain.strip().lower()
-        if domain in ("", "all"):
-            domain = None
-        elif domain not in DOMAINS:
-            raise HTTPException(422, f"unknown domain {domain!r}; expected one of {list(DOMAINS)}")
+    domain = _validated_domain(domain)
 
     if get_item(conn, item_uid) is None:
         raise HTTPException(404, f"no item with uid {item_uid!r}")
@@ -226,4 +237,149 @@ def stats(conn: Conn, cfg: Cfg) -> Stats:
         last_ingest_at=datetime.fromisoformat(last) if last else None,
         db_path=str(cfg.db_path),
         region=cfg.region,
+    )
+
+
+# --------------------------------------------------------------------------
+# your library
+#
+# The only routes that write. Everything above reports what sources said;
+# these record what *you* say, which is the one thing no ingester can supply
+# and the signal every model above is waiting for.
+# --------------------------------------------------------------------------
+
+
+def _rated_item(conn: sqlite3.Connection, item_uid: str) -> RatedItem | None:
+    """A work with your score on it, or ``None`` if you have not rated it."""
+    scored = get_rating(conn, item_uid)
+    if scored is None:
+        return None
+    rating, rated_at = scored
+    item = get_item(conn, item_uid)
+    if item is None:  # pragma: no cover - callers check the item exists first
+        return None
+    return RatedItem(
+        rating=rating,
+        rated_at=datetime.fromisoformat(rated_at) if rated_at else None,
+        item=item,
+    )
+
+
+@router.put("/ratings/{item_uid:path}", response_model=RatedItem)
+def rate_item(item_uid: str, body: RatingIn, conn: Conn) -> RatedItem:
+    """Rate a work 1-10. Idempotent: rating it again is a correction, not a second opinion.
+
+    PUT rather than POST because a rating is addressed by the thing it is about
+    and there can only be one of yours -- ``upsert_ratings`` was already an
+    upsert, and the route should not pretend otherwise.
+    """
+    if get_item(conn, item_uid) is None:
+        raise HTTPException(404, f"no item with uid {item_uid!r}")
+
+    set_rating(conn, item_uid, body.rating)
+    rated = _rated_item(conn, item_uid)
+    assert rated is not None  # just written
+    return rated
+
+
+@router.get("/ratings/{item_uid:path}", response_model=RatedItem)
+def read_rating(item_uid: str, conn: Conn) -> RatedItem:
+    """Your score for one work, so opening it shows what you already said."""
+    rated = _rated_item(conn, item_uid)
+    if rated is None:
+        raise HTTPException(404, f"{item_uid!r} is not rated")
+    return rated
+
+
+@router.delete("/ratings/{item_uid:path}", status_code=204)
+def unrate_item(item_uid: str, conn: Conn) -> Response:
+    """Forget a rating. 404 if there was nothing to forget, so a UI can tell."""
+    if not delete_rating(conn, item_uid):
+        raise HTTPException(404, f"{item_uid!r} is not rated")
+    return Response(status_code=204)
+
+
+@router.get("/library", response_model=LibraryPage)
+def library(
+    conn: Conn,
+    domain: str | None = Query(None, description="Filter to one domain"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> LibraryPage:
+    """What you have rated, newest first."""
+    total, rows = query_ratings(
+        conn, domain=_validated_domain(domain), limit=limit, offset=offset
+    )
+    return LibraryPage(
+        total=total,
+        limit=limit,
+        offset=offset,
+        items=[
+            RatedItem(
+                rating=rating,
+                rated_at=datetime.fromisoformat(rated_at) if rated_at else None,
+                item=item,
+            )
+            for rating, rated_at, item in rows
+        ],
+    )
+
+
+@router.get("/recommend", response_model=RecommendPage)
+def recommend(
+    conn: Conn,
+    cfg: Cfg,
+    domain: str | None = Query(None, description="Recommend within one domain"),
+    k: int = Query(20, ge=1, le=50),
+    same_franchise: bool = Query(
+        False, description="Include sequels and side stories of things you rated"
+    ),
+) -> RecommendPage:
+    """Works nearest *your taste*, optionally in a domain you have never rated in.
+
+    This is ``/api/similar`` with the query replaced by a profile: instead of
+    "what is like this one thing", "what is like the things you liked". Asking
+    for ``domain=book`` having rated only anime is the cross-domain bridge
+    doing the job it was built for, and it needs no ratings in the target
+    domain at all -- which is exactly what collaborative filtering cannot do,
+    since the ratings corpus knows only anime.
+    """
+    domain = _validated_domain(domain)
+    index = _similarity_index(cfg.embeddings_path)
+    if index is None:
+        raise HTTPException(
+            503,
+            f"no embedding matrix at {cfg.embeddings_path}; run scripts/embed.py to build it",
+        )
+
+    ratings = rated_uids(conn)
+    profile = build_profile(index, ratings)
+    if profile is None:
+        raise HTTPException(
+            409,
+            "nothing to recommend from: rate something first, or rebuild the "
+            "embedding matrix so the things you rated are in it",
+        )
+
+    # Never recommend what you have already rated, nor -- as with /api/similar
+    # -- the sequels and side stories of it, which are the nearest neighbours
+    # of anything you liked and the least useful answer to "what next".
+    exclude = set(ratings)
+    n_before = len(exclude)
+    if not same_franchise:
+        for uid in ratings:
+            exclude |= franchise_representatives(conn, uid)
+
+    found = index.similar_to_vector(profile.vector, k=k, domain=domain, exclude=exclude)
+    items = {i.item_uid: i for i in (get_item(conn, n.item_uid) for n in found) if i is not None}
+    return RecommendPage(
+        domain=domain,
+        n_rated=profile.n_rated,
+        n_used=profile.n_used,
+        n_suppressed=len(exclude) - n_before,
+        neighbours=[
+            SimilarItem(score=n.score, item=items[n.item_uid])
+            for n in found
+            if n.item_uid in items
+        ],
     )
