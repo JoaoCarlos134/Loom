@@ -6,6 +6,112 @@ Architecture and rationale live in `README.md`; Phase 0's closing state is in
 
 ---
 
+## Priority 1 — before this repository goes public
+
+A full pre-publication audit ran on 2026-09-09 against the code-only machine.
+**Secrets are clean and no history rewrite is needed for them**: `.env` has
+never been committed on any ref, every historical revision of `.env.example`
+has `TMDB_READ_TOKEN=` and `TMDB_API_KEY=` empty, and no JWT, 32-hex key or
+Kaggle credential appears anywhere in the 14 commits. No data file has ever
+been committed either — the largest blob ever stored is a 363 KB test fixture,
+and `.git` is 943 KB.
+
+What follows is what the audit found that is *not* clean. Nothing here blocks
+the work in the phase table below; all of it blocks flipping the repo to
+public.
+
+### Done on the code-only machine
+
+- [x] **`openlibrary_rate_per_sec` 5.0 → 3.0.** Open Library documents 1 req/s
+      unidentified and 3 req/s for clients sending a contact User-Agent. Loom
+      sends one, so 3 is the ceiling and 5.0 was 67% over it. The comment above
+      the setting claimed it was "well inside what they ask for", which was
+      simply wrong and is corrected.
+- [x] **Attribution section in `README.md`.** The repo had no licensing or
+      attribution content of any kind. TMDB *requires* a specific notice;
+      goodbooks-10k is CC BY-SA 4.0 and *requires* credit. Both are now stated,
+      along with every other source's terms and the rate each is polled at.
+- [x] **Repo-local git identity pinned.** Git for Windows was deriving the
+      author from the machine's Active Directory account, so commits made there
+      were silently attributed to a corporate address with nothing in git config
+      to show it. `user.name` / `user.email` are now set in `.git/config` to the
+      public GitHub identity. This stops the leak growing; it does not fix the
+      five commits that already carry it.
+
+### Needs a decision, not a machine
+
+- [ ] **Choose a licence.** There is no `LICENSE` file and `pyproject.toml`
+      names none. MIT is the conventional portfolio choice; Apache-2.0 adds a
+      patent grant and a NOTICE file that pairs well with the third-party
+      attribution above; a source-available licence would restrict commercial
+      use, which sits closer to TMDB's own terms but makes the repo less useful
+      as a work sample. **The licence covers Loom's code only** — it cannot
+      relicense goodbooks-10k's CC BY-SA data or override TMDB's API terms.
+- [ ] **Decide what to do about the five commits carrying the corporate
+      address.** `9fe9652`, `bdb20f6`, `965887b`, `bc98c02` and the initial
+      commit `5162470` are authored *and* committed as `L08741@lactec.com.br`.
+      Read alongside `README.md`'s description of the secondary machine
+      ("locked-down corporate Windows machine, no admin, TLS interception"), a
+      reader can infer the employer, the employee number, and that a personal
+      project was developed on employer equipment — which some employment
+      agreements treat as an IP question. The other nine commits use the GitHub
+      noreply address. Rewriting five of fourteen commits is cheap in effort and
+      destructive in kind; it needs an explicit plan and approval, and it is
+      much harder to undo once the repo is public and forks exist.
+
+### Needs the machine that has credentials and data
+
+- [ ] **Verify the TMDB attribution renders and is accurate** against a real
+      key, and decide how to handle two clauses the audit could not resolve from
+      code alone: TMDB forbids storing API data beyond **6 months** (Loom's
+      SQLite rows are permanent; `HTTP_CACHE_TTL_DAYS=30` covers only the HTTP
+      cache), and names "operating recommendation-based services" as commercial
+      use requiring a separate agreement. A local personal app is a different
+      thing from an operated service, but the terms do not say so.
+- [ ] **Re-time `book_openlibrary` at 3 req/s** and confirm the ingest still
+      completes in a sane window. Separately, weigh the harder question: Open
+      Library explicitly discourages "making hundreds of single-book requests"
+      and points bulk users at their monthly data dumps, while this ingester
+      makes ~100 batch calls **plus one `/works/` request per book** — roughly
+      10,000 individual requests. Defensible as a one-off personal build,
+      genuinely against the spirit of their guidance as a documented workflow.
+      Switching to the monthly dump would remove the tension entirely.
+- [ ] **Settle the MAL Kaggle dump's licence.** `azathoth42/myanimelist` states
+      no licence the audit could find; the Kaggle page is JS-rendered, and the
+      author's companion repo names none. The data is scraped from
+      MyAnimeList.net, so upstream terms may apply independently. Exposure is
+      small — 4 anime rows and 11 ratings are committed as fixtures, and the
+      code only *references* the dataset — but it is unresolved.
+
+### Presentation polish
+
+- [ ] `pyproject.toml` still has no `license` field (blocked on the decision
+      above); `authors` and `[project.urls]` are now filled in.
+- [ ] `PHASE0_TODO.md` is a stale internal status file — it claims 229 tests and
+      a 14,503-item catalog, both long superseded, and contradicts the README.
+      Delete it or fold it into this file.
+- [ ] `CLAUDE.md` ships publicly and advertises AI-assisted development. Plenty
+      of repos ship one; it is a preference, not a problem.
+- [ ] One AniList clause worth knowing rather than acting on: their terms
+      prohibit use "within competing, non-complementary services of the same
+      nature, including anime and manga list or tracker services". Loom is
+      cross-domain and local-only, but the library added in Phase 3 makes it
+      more list-shaped than it was.
+
+### What the audit found clean, and does not need rechecking
+
+Secrets in tree and history; committed data files (none beyond de minimis
+fixtures — 5 books, 4 anime rows, 11 ratings, 2–3 API records each); `.git`
+bloat (never); personal paths or machine names in tracked files (none —
+`%LOCALAPPDATA%` and `C:\Users\you\...` are placeholders); commit *messages*
+(no private references); TODO/FIXME/HACK comments (one benign "for now" in the
+README). MusicBrainz core data is CC0 and its 1 req/s limit is respected;
+AniList's current 30 req/min limit is matched exactly; Jikan sits at its
+documented 3 req/s and 60 req/min. A stranger's `git clone` → `uv sync` →
+`uv run pytest` was dry-run from a fresh clone and passes.
+
+---
+
 ## Where we are
 
 **Phases 0 through 2 are complete**, and both halves of Phase 3's model layer

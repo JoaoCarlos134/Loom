@@ -120,9 +120,12 @@ class Settings(BaseSettings):
     openlibrary_url: str = "https://openlibrary.org"
     openlibrary_target_count: int = 0  # 0 = every ISBN in the catalog
     openlibrary_max_subjects: int = 25
-    # Open Library is a nonprofit running on donated infrastructure. This is
-    # well inside what they ask for and there is no reason to push it.
-    openlibrary_rate_per_sec: float = 5.0
+    # Open Library documents 1 req/s for anonymous clients and 3 req/s for ones
+    # that identify themselves with a contact User-Agent -- which this ingester
+    # sends, so 3 is the ceiling. It was 5.0 here, over the limit, under a
+    # comment asserting the opposite. They are a nonprofit on donated
+    # infrastructure; the documented number is the number.
+    openlibrary_rate_per_sec: float = 3.0
     openlibrary_rate_per_min: float = 0.0
     openlibrary_max_retries: int = 6
 

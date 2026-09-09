@@ -430,3 +430,74 @@ bridge doing the job it was built for, and it is the thing collaborative
 filtering structurally cannot do here, since all 19.2M corpus ratings are
 anime.
 
+---
+
+## Data sources, attribution and terms
+
+Loom ingests from six third-party sources and ships none of their data. The
+catalog is built on your machine, from your own credentials where any are
+needed, and lives outside the repository. What is committed here is code, plus
+a handful of API responses of two or three records each used as test fixtures.
+
+Each source sets its own terms. They are summarised below and the rate limiter
+is configured to match; `config.py` is the one place those numbers live.
+
+| Source | Data terms | Rate Loom uses | Their limit |
+|---|---|---|---|
+| [TMDB](https://www.themoviedb.org/) | Attribution required, see notice below. Non-commercial; API data not to be stored beyond 6 months | 20 req/s | 20 req/s |
+| [goodbooks-10k](https://github.com/zygmuntz/goodbooks-10k) | **CC BY-SA 4.0** — credit required, ShareAlike on adapted data | one-off CSV download | — |
+| [MusicBrainz](https://musicbrainz.org/) | Core data **CC0** (public domain); supplementary data CC BY-NC-SA 3.0 | 1 req/s | 1 req/s |
+| [AniList](https://anilist.co/) | Not for use in competing anime/manga list or tracker services | 30 req/min | 30 req/min (temporarily reduced from 90) |
+| [Open Library](https://openlibrary.org/) | Open data; bulk harvesting discouraged in favour of their monthly dumps | 3 req/s | 3 req/s identified, 1 req/s anonymous |
+| [Jikan](https://jikan.moe/) | Unofficial MyAnimeList API | 3 req/s, 60 req/min | 3 req/s, 60 req/min |
+| [MAL Kaggle dump](https://www.kaggle.com/datasets/azathoth42/myanimelist) | **No licence stated by the publisher** — see the caveat below | local file, no requests | — |
+
+### TMDB
+
+> This product uses TMDB and the TMDB APIs but is not endorsed, certified, or
+> otherwise approved by TMDB.
+
+TMDB's terms are the most restrictive of the six. The standard licence is
+non-commercial, forbids storing API data for longer than six months, and names
+operating a recommendation service among the uses that require a separate
+written agreement. Loom is a local, single-user, non-revenue application and no
+TMDB data leaves the machine it was fetched on — but if you intend to run it as
+anything other than that, read
+[their terms](https://www.themoviedb.org/api-terms-of-use) first. TMDB is also
+the only source needing a credential, and it is the only one Loom will refuse to
+run without.
+
+### goodbooks-10k
+
+Book ratings and tags come from
+[goodbooks-10k](https://github.com/zygmuntz/goodbooks-10k) by Zygmunt Zając,
+licensed **CC BY-SA 4.0**. The five-book sample under `tests/fixtures/goodbooks/`
+is redistributed under the same licence. ShareAlike attaches to adapted versions
+of that data, not to the code in this repository that reads it.
+
+### The MyAnimeList Kaggle dump
+
+`azathoth42/myanimelist` supplies the 2018 anime snapshot and the 19.2M-rating
+matrix. **The publisher states no licence**, and the data was scraped from
+MyAnimeList.net, so MAL's own terms may apply independently. Loom downloads it
+through `kagglehub` under your Kaggle account and never redistributes it; the
+four rows and eleven ratings under `tests/fixtures/` are there so the parser has
+something to parse. If you intend to publish anything derived from this dataset,
+resolve its provenance yourself first — this project has not been able to.
+
+### What Loom asks of these services
+
+Every ingester filters at the source, so a row rejected by a threshold is a
+request never made. Responses are cached on disk for 30 days by default, which
+means a re-run costs the API nothing. MusicBrainz is polled at one request a
+second with a User-Agent naming a contact, because
+[they throttle clients that do not identify themselves](https://musicbrainz.org/doc/XML_Web_Service/Rate_Limiting).
+None of the rate settings should be raised; several of them sit exactly at a
+documented ceiling.
+
+One known tension, stated plainly rather than buried: `book_openlibrary` makes
+roughly one hundred batch calls to resolve ISBNs and then **one request per
+book** — about ten thousand of them for a full run. Open Library asks that bulk
+consumers use their monthly data dumps instead. For a single personal catalog
+build this is a few hours at three requests a second; as a routine workflow it
+is not what they are asking for, and the honest fix is the dump.

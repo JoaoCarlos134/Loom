@@ -4,6 +4,9 @@ version = "0.1.0"
 description = "Cross-domain hybrid recommender system (local desktop app)"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
+# No `license` field yet -- deliberately. See ROADMAP.md "Priority 1"; the
+# choice is open and affects how the third-party attribution in README.md reads.
+authors = [{ name = "JoaoCarlos134" }]
 dependencies = [
     "fastapi>=0.115",
     "uvicorn>=0.30",
@@ -16,6 +19,10 @@ dependencies = [
     "kagglehub>=1.0.2",
     "fastembed>=0.8.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/JoaoCarlos134/Loom"
+Repository = "https://github.com/JoaoCarlos134/Loom"
 
 [dependency-groups]
 dev = [
