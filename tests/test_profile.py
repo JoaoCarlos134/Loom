@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
-from recsys.api.routes import _collaborative_index, _similarity_index
+from recsys.api.routes import _load_collaborative_index, _load_similarity_index
 from recsys.config import get_settings
 from recsys.db import connect, init_db, set_rating, upsert_items
 from recsys.link import rebuild_links
@@ -143,11 +143,11 @@ VECTORS = {
 
 @pytest.fixture(autouse=True)
 def _clear_index_cache():
-    _similarity_index.cache_clear()
-    _collaborative_index.cache_clear()
+    _load_similarity_index.cache_clear()
+    _load_collaborative_index.cache_clear()
     yield
-    _similarity_index.cache_clear()
-    _collaborative_index.cache_clear()
+    _load_similarity_index.cache_clear()
+    _load_collaborative_index.cache_clear()
 
 
 @pytest.fixture

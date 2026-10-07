@@ -45,7 +45,6 @@ from recsys.schemas import (
 router = APIRouter(prefix="/api", tags=["catalog"])
 
 
-@lru_cache(maxsize=1)
 def _similarity_index(path: Path):
     """The embedding matrix, loaded once per process and held.
 
@@ -53,20 +52,33 @@ def _similarity_index(path: Path):
     loaded lazily on the first request that needs it rather than at startup,
     which keeps a catalog-only session from paying for a model it never asks
     about. Cached on the path, so a test pointing at another DATA_DIR gets its
-    own. ``None`` when the matrix has not been built yet.
+    own. ``None`` when the matrix has not been built yet -- and that answer is
+    not cached, so running embed.py while the app is up needs no restart.
     """
     if not Path(path).is_file():
         return None
+    return _load_similarity_index(path)
+
+
+@lru_cache(maxsize=1)
+def _load_similarity_index(path: Path):
     from recsys.models.similarity import SimilarityIndex
 
     return SimilarityIndex.load(Path(path))
 
 
-@lru_cache(maxsize=1)
 def _collaborative_index(path: Path):
-    """The item-item neighbour table, loaded once per process. ``None`` if unbuilt."""
+    """The item-item neighbour table, loaded once per process. ``None`` if unbuilt.
+
+    Same rule as ``_similarity_index``: a missing file is never cached.
+    """
     if not Path(path).is_file():
         return None
+    return _load_collaborative_index(path)
+
+
+@lru_cache(maxsize=1)
+def _load_collaborative_index(path: Path):
     from recsys.models.collaborative import CollaborativeIndex
 
     return CollaborativeIndex.load(Path(path))
@@ -157,7 +169,7 @@ def similar(
     Two models answer it and they fail differently. ``content`` compares what
     works are *about* and will happily return something nobody enjoyed;
     ``cf`` compares who rated what and has never heard of a work nobody rated,
-    nor of any domain but anime, because that is all the ratings corpus covers.
+    nor of any domain its ratings corpus does not cover (anime and books).
     """
     if method not in ("content", "cf"):
         raise HTTPException(422, f"unknown method {method!r}; expected 'content' or 'cf'")
@@ -342,7 +354,7 @@ def recommend(
     for ``domain=book`` having rated only anime is the cross-domain bridge
     doing the job it was built for, and it needs no ratings in the target
     domain at all -- which is exactly what collaborative filtering cannot do,
-    since the ratings corpus knows only anime.
+    since no user in the ratings corpus has rated across domains.
     """
     domain = _validated_domain(domain)
     index = _similarity_index(cfg.embeddings_path)

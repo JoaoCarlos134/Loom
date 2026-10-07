@@ -15,7 +15,7 @@ import pyarrow.parquet as pq
 import pytest
 from fastapi.testclient import TestClient
 
-from recsys.api.routes import _collaborative_index, _similarity_index
+from recsys.api.routes import _load_collaborative_index, _load_similarity_index
 from recsys.config import get_settings
 from recsys.db import connect, init_db, upsert_items
 from recsys.relations import rebuild_relations
@@ -69,11 +69,11 @@ def write_matrix(path, vectors):
 @pytest.fixture(autouse=True)
 def _clear_index_cache():
     # The loader is lru_cached on the path; a per-test DATA_DIR reuses paths.
-    _similarity_index.cache_clear()
-    _collaborative_index.cache_clear()
+    _load_similarity_index.cache_clear()
+    _load_collaborative_index.cache_clear()
     yield
-    _similarity_index.cache_clear()
-    _collaborative_index.cache_clear()
+    _load_similarity_index.cache_clear()
+    _load_collaborative_index.cache_clear()
 
 
 @pytest.fixture
@@ -250,3 +250,21 @@ def test_no_cf_model_is_503_naming_the_fix(seeded):
         r = c.get("/api/similar/anime:anilist:1?method=cf")
     assert r.status_code == 503
     assert "cf.py" in r.json()["detail"]
+
+
+def test_a_model_built_while_the_app_runs_is_picked_up(seeded):
+    """The 503 says to run embed.py / cf.py; doing so must not need a restart.
+
+    A missing file is the one answer the loader must not remember.
+    """
+    from recsys.api.server import create_app
+
+    with TestClient(create_app()) as c:
+        assert c.get("/api/similar/anime:anilist:1").status_code == 503
+        assert c.get("/api/similar/anime:anilist:1?method=cf").status_code == 503
+
+        write_matrix(seeded.embeddings_path, VECTORS)
+        write_cf(seeded.collaborative_path, CF_NEIGHBOURS)
+
+        assert c.get("/api/similar/anime:anilist:1").status_code == 200
+        assert c.get("/api/similar/anime:anilist:1?method=cf").status_code == 200
