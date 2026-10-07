@@ -11,7 +11,7 @@ synopsis), reconciled across sources and calibrated onto one popularity scale,
 plus **19.2M user ratings**. Two recommendation models are built and served at
 `/api/similar`: content-based text embeddings and item-item collaborative
 filtering. You can rate things yourself, and `/api/recommend` will find works
-nearest your taste **in a domain you have never rated in**. **766 tests**,
+nearest your taste **in a domain you have never rated in**. **778 tests**,
 ruff- and mypy-clean.
 
 ---
@@ -83,6 +83,7 @@ Two sources feed the `anime` domain:
 | `music_musicbrainz` | MusicBrainz + Deezer | ~5k artists | hours; MusicBrainz asks 1 req/s |
 | `book_openlibrary` | Open Library | ~9k enriched | ~30 min; the synopses goodbooks lacks |
 | `anime_mal_ratings` | same Kaggle archive | 19.2M ratings | ~75 s, grows the DB to ~1.3 GB |
+| `book_goodbooks_ratings` | goodbooks-10k, GitHub CSV | 6.0M ratings | ~70 s, 72 MB download, no credential |
 
 `anime_mal_ratings` is **not** in the default `INGESTERS` list. It is a one-off
 bulk load of Phase 3's training data rather than part of building the catalog,
@@ -108,6 +109,7 @@ Useful flags:
 ```powershell
 uv run python scripts/bootstrap.py --limit 100          # small run while developing
 uv run python scripts/bootstrap.py --only anime_mal_ratings  # load the 19.2M ratings
+uv run python scripts/bootstrap.py --only book_goodbooks_ratings  # 6M book ratings, no Kaggle
 uv run python scripts/bootstrap.py --no-ingest          # schema only
 uv run python scripts/bootstrap.py --only anime_mal_csv # skip the live API
 ```
@@ -128,7 +130,7 @@ uv run python app.py --no-ui     # serve only, for curl/httpie against the API
 ### 6. Tests and checks
 
 ```powershell
-uv run pytest          # 766 tests, none touching the network
+uv run pytest          # 778 tests, none touching the network
 uv run ruff check .    # lint
 uv run mypy            # type check
 ```
@@ -427,8 +429,8 @@ sources said; these record what *you* say, which is the one thing no ingester
 can supply. `/api/recommend` is `/api/similar` with the query replaced by a
 profile — so asking for books having rated only anime is the cross-domain
 bridge doing the job it was built for, and it is the thing collaborative
-filtering structurally cannot do here, since all 19.2M corpus ratings are
-anime.
+filtering structurally cannot do here, since its ratings never cross a
+domain: 19.2M are anime and 6M are books, from disjoint sets of users.
 
 ---
 

@@ -84,6 +84,12 @@ def _mal_ratings(settings: Settings) -> IngestRunner:
     return MalRatingsLoader(settings)
 
 
+def _goodbooks_ratings(settings: Settings) -> IngestRunner:
+    from recsys.ingest.ratings_goodbooks import GoodbooksRatingsLoader
+
+    return GoodbooksRatingsLoader(settings)
+
+
 # name -> factory. Adding a source is one line here plus its module.
 REGISTRY: dict[str, Callable[[Settings], IngestRunner]] = {
     "anime_jikan": _jikan,
@@ -97,6 +103,7 @@ REGISTRY: dict[str, Callable[[Settings], IngestRunner]] = {
     "book_openlibrary": _openlibrary,
     "music_musicbrainz": _musicbrainz,
     "anime_mal_ratings": _mal_ratings,
+    "book_goodbooks_ratings": _goodbooks_ratings,
 }
 
 

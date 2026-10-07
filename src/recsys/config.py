@@ -114,6 +114,9 @@ class Settings(BaseSettings):
     # A shelf used by fewer readers than this is one person's filing habit.
     goodbooks_min_tag_count: int = 50
     goodbooks_max_tags: int = 20
+    # goodbooks-10k user ratings (~6M), same base URL / GOODBOOKS_PATH as the
+    # catalog. Rows read, not rows written. 0 = the whole file.
+    goodbooks_ratings_target_count: int = 0
 
     # Open Library (book descriptions). Keyless. Driven by the ISBNs already in
     # the catalog, so book_goodbooks runs first.

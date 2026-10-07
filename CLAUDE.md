@@ -76,10 +76,11 @@ for what comes next.
 
 ```powershell
 uv sync                                       # install from uv.lock
-uv run pytest                                 # 766 tests, none touch the network
+uv run pytest                                 # 778 tests, none touch the network
 uv run python scripts/bootstrap.py            # init schema + run ingesters
 uv run python scripts/bootstrap.py --only anime_mal_csv --limit 100
 uv run python scripts/bootstrap.py --only anime_mal_ratings   # 19.2M ratings, ~75 s
+uv run python scripts/bootstrap.py --only book_goodbooks_ratings  # 6M ratings, GitHub, ~70 s
 uv run python scripts/bootstrap.py --only manga_anilist        # 2nd domain, ~2 min
 uv run python scripts/bootstrap.py --only movie_tmdb --only tv_tmdb  # needs TMDB creds
 uv run python scripts/bootstrap.py --only book_goodbooks       # 10k books, ~4 s
