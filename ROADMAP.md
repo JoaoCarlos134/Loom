@@ -50,6 +50,8 @@ public.
       the GitHub noreply identity (2026-09-09). The last ref still holding the
       old history, the `claude/brave-feynman-sqk4dx` branch, had its two commits
       replayed onto the rewritten `main` on 2026-11-04 and was then deleted.
+      GitHub still served the old commits by SHA, so the repo was recreated with
+      only the clean history; the old one is the private `Loom-old`.
 
 ### Needs the machine that has credentials and data
 
