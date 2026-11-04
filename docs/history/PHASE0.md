@@ -1,5 +1,8 @@
 # Phase 0 — status
 
+> **Historical snapshot (2026-08).** Kept for the measured Jikan endpoint matrix
+> below. Its numbers are long superseded; `README.md` and `ROADMAP.md` are current.
+
 Everything in `README.md` is accurate. Phase 0 is **complete**: schema,
 ingest, API, UI, desktop window and tests all verified end to end, with the
 `anime` domain populated from two sources.

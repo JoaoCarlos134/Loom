@@ -4,8 +4,8 @@ version = "0.1.0"
 description = "Cross-domain hybrid recommender system (local desktop app)"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
-# No `license` field yet -- deliberately. See ROADMAP.md "Priority 1"; the
-# choice is open and affects how the third-party attribution in README.md reads.
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "JoaoCarlos134" }]
 dependencies = [
     "fastapi>=0.115",

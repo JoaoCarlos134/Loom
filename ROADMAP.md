@@ -2,7 +2,7 @@
 
 Where the project is, what comes next, and which datasets feed each step.
 Architecture and rationale live in `README.md`; Phase 0's closing state is in
-`PHASE0_TODO.md`.
+`docs/history/PHASE0.md`.
 
 ---
 
@@ -40,24 +40,16 @@ public.
 
 ### Needs a decision, not a machine
 
-- [ ] **Choose a licence.** There is no `LICENSE` file and `pyproject.toml`
-      names none. MIT is the conventional portfolio choice; Apache-2.0 adds a
-      patent grant and a NOTICE file that pairs well with the third-party
-      attribution above; a source-available licence would restrict commercial
-      use, which sits closer to TMDB's own terms but makes the repo less useful
-      as a work sample. **The licence covers Loom's code only** — it cannot
-      relicense goodbooks-10k's CC BY-SA data or override TMDB's API terms.
-- [ ] **Decide what to do about the five commits carrying the corporate
-      address.** `9fe9652`, `bdb20f6`, `965887b`, `bc98c02` and the initial
-      commit `5162470` are authored *and* committed as `L08741@lactec.com.br`.
-      Read alongside `README.md`'s description of the secondary machine
-      ("locked-down corporate Windows machine, no admin, TLS interception"), a
-      reader can infer the employer, the employee number, and that a personal
-      project was developed on employer equipment — which some employment
-      agreements treat as an IP question. The other nine commits use the GitHub
-      noreply address. Rewriting five of fourteen commits is cheap in effort and
-      destructive in kind; it needs an explicit plan and approval, and it is
-      much harder to undo once the repo is public and forks exist.
+- [x] **Licence: MIT (chosen 2026-11-04).** The conventional portfolio choice.
+      Apache-2.0 (patent grant, NOTICE file) and a source-available licence were
+      weighed and rejected: the first adds ceremony nothing here needs, the second
+      makes the repo less useful as a work sample. **The licence covers Loom's code
+      only** — it cannot relicense goodbooks-10k's CC BY-SA data or override
+      TMDB's API terms; `README.md` says so beside the attribution.
+- [x] **The five commits carrying the corporate address were rewritten** onto
+      the GitHub noreply identity (2026-09-09). The last ref still holding the
+      old history, the `claude/brave-feynman-sqk4dx` branch, had its two commits
+      replayed onto the rewritten `main` on 2026-11-04 and was then deleted.
 
 ### Needs the machine that has credentials and data
 
@@ -85,11 +77,11 @@ public.
 
 ### Presentation polish
 
-- [ ] `pyproject.toml` still has no `license` field (blocked on the decision
-      above); `authors` and `[project.urls]` are now filled in.
-- [ ] `PHASE0_TODO.md` is a stale internal status file — it claims 229 tests and
-      a 14,503-item catalog, both long superseded, and contradicts the README.
-      Delete it or fold it into this file.
+- [x] `pyproject.toml` declares `license = "MIT"`; `authors` and
+      `[project.urls]` are filled in.
+- [x] `PHASE0_TODO.md` was a stale internal status file (229 tests, a
+      14,503-item catalog). It moved to `docs/history/PHASE0.md` under a banner
+      saying it is a snapshot; the Jikan endpoint matrix in it is still cited below.
 - [ ] `CLAUDE.md` ships publicly and advertises AI-assisted development. Plenty
       of repos ship one; it is a preference, not a problem.
 - [ ] One AniList clause worth knowing rather than acting on: their terms
@@ -1212,7 +1204,7 @@ common public ones have it.
 - **Jikan is degraded to its warm cache.** Page 1 of `/top/anime` returns 200;
   everything deeper 504s, as do search, seasons, relations, recommendations, and
   `/anime/{id}` for any non-popular id. Not routable around — see
-  `PHASE0_TODO.md` for the measured endpoint matrix and the sampling trap that
+  `docs/history/PHASE0.md` for the measured endpoint matrix and the sampling trap that
   makes id lookups look usable. Re-run `bootstrap.py` once it recovers; upserts
   are idempotent.
 

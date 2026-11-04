@@ -1,5 +1,8 @@
 # Loom
 
+[![CI](https://github.com/JoaoCarlos134/Loom/actions/workflows/ci.yml/badge.svg)](https://github.com/JoaoCarlos134/Loom/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Cross-domain hybrid recommender system (anime / manga / books / music / movies / TV) that runs
 as a local desktop app. No server, no cloud, no admin rights.
 
@@ -39,7 +42,7 @@ uv --version
 ### 2. Clone and sync
 
 ```powershell
-git clone git@github.com:JoaoCarlos134/Loom.git
+git clone https://github.com/JoaoCarlos134/Loom.git
 cd Loom
 uv sync
 ```
@@ -503,3 +506,11 @@ book** — about ten thousand of them for a full run. Open Library asks that bul
 consumers use their monthly data dumps instead. For a single personal catalog
 build this is a few hours at three requests a second; as a routine workflow it
 is not what they are asking for, and the honest fix is the dump.
+
+---
+
+## License
+
+Loom's code is released under the [MIT License](LICENSE). The licence covers the
+code only: data fetched from the sources above stays under each source's own
+terms, and the goodbooks-10k sample in `tests/fixtures/goodbooks/` is CC BY-SA 4.0.
