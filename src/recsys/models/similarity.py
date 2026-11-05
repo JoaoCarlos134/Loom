@@ -76,10 +76,13 @@ class SimilarityIndex:
                 (d == domain for d in self.domains), dtype=bool, count=len(self.domains)
             )
         if exclude:
-            drop = np.fromiter(
-                (uid in exclude for uid in self.uids), dtype=bool, count=len(self.uids)
-            )
-            mask = ~drop if mask is None else (mask & ~drop)
+            # Built from positions, not by testing all 80,000 uids: callers
+            # exclude every row that lost its primary election, tens of
+            # thousands of uids, on every request.
+            keep = np.ones(len(self.uids), dtype=bool)
+            positions = [self._position[u] for u in exclude if u in self._position]
+            keep[positions] = False
+            mask = keep if mask is None else (mask & keep)
         if mask is not None:
             if not mask.any():
                 return []

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Iterator
+from dataclasses import dataclass
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
@@ -25,6 +26,7 @@ from recsys.db import (
     rated_uids,
     set_rating,
 )
+from recsys.link import representative_uid, work_members
 from recsys.models.profile import build_profile
 from recsys.relations import franchise_representatives
 from recsys.schemas import (
@@ -98,6 +100,48 @@ def db_conn() -> Iterator[sqlite3.Connection]:
 
 Conn = Annotated[sqlite3.Connection, Depends(db_conn)]
 Cfg = Annotated[Settings, Depends(get_settings)]
+
+
+@dataclass
+class _Hit:
+    """One neighbour, translated to the work listings show."""
+
+    item_uid: str
+    domain: str
+    score: float
+
+
+def _as_works(conn: sqlite3.Connection, found: list[Any], drop: set[str]) -> list[_Hit]:
+    """Neighbours as the works listings show: representative uids, each once.
+
+    The matrix is a snapshot of the primary election at the time it was built,
+    and relinking moves representatives -- the day an anime and its TMDB TV
+    entry become one work, the matrix still holds the TV row's vector, and it is
+    the nearest neighbour of the anime it is a copy of. Translating here, in
+    score order, keeps the best-scored row of each work and lets ``drop`` (the
+    query's own work, what you rated) catch every row of it.
+    """
+    out: list[_Hit] = []
+    seen = set(drop)
+    for neighbour in found:
+        uid = representative_uid(conn, neighbour.item_uid)
+        if uid in seen:
+            continue
+        seen.add(uid)
+        out.append(_Hit(uid, uid.split(":", 1)[0], float(neighbour.score)))
+    return out
+
+
+def _outvoted(conn: sqlite3.Connection) -> set[str]:
+    """Rows that no longer represent their work, so the matrix must not answer with them.
+
+    Excluded *before* the top-k, not translated after it: the matrix files each
+    row under the domain it had when it was built, so for an anime the nearest
+    ``tv`` rows are exactly its own TMDB twins, and a page filled with them and
+    then translated comes back empty. Empty when the matrix is current, since
+    it is built from representatives only. One indexed scan of ``links``.
+    """
+    return {r[0] for r in conn.execute("SELECT item_uid FROM links WHERE is_primary = 0")}
 
 
 def _validated_domain(domain: str | None) -> str | None:
@@ -177,13 +221,17 @@ def similar(
 
     if get_item(conn, item_uid) is None:
         raise HTTPException(404, f"no item with uid {item_uid!r}")
+    # Any row of a work reaches it; the matrix holds only the one that
+    # represents it, and that is the one whose neighbours are wanted.
+    work_uid = representative_uid(conn, item_uid)
 
     # Over-fetch so franchise suppression cannot return fewer than k when there
-    # are k genuine neighbours behind the sequels.
+    # are k genuine neighbours behind the sequels -- and by k again, because a
+    # matrix older than the last relink can hold several rows of one work.
     suppress: set[str] = set()
     if not same_franchise:
         suppress = franchise_representatives(conn, item_uid)
-    want = k + len(suppress)
+    want = 2 * k + len(suppress)
 
     if method == "cf":
         cf = _collaborative_index(cfg.collaborative_path)
@@ -196,8 +244,6 @@ def similar(
         # The index translates uid spaces itself; an empty list means this work
         # has no ratings, which is an answer rather than an error.
         found = cf.similar_to(conn, item_uid, k=want)
-        if domain is not None:
-            found = [n for n in found if n.item_uid.startswith(f"{domain}:")]
     else:
         index = _similarity_index(cfg.embeddings_path)
         if index is None:
@@ -206,7 +252,13 @@ def similar(
                 f"no embedding matrix at {cfg.embeddings_path}; "
                 "run scripts/embed.py to build it",
             )
-        if not index.has(item_uid):
+        # The representative's vector if the matrix has it; otherwise any row
+        # of the work that it does -- a relink can move the representative
+        # without the matrix knowing.
+        query = next(
+            (u for u in (work_uid, *work_members(conn, item_uid)) if index.has(u)), None
+        )
+        if query is None:
             # In the catalog but not the matrix: the matrix is a snapshot and is
             # rebuilt separately, so this is staleness, not a missing item.
             raise HTTPException(
@@ -214,7 +266,16 @@ def similar(
                 f"{item_uid!r} is not in the embedding matrix; "
                 "rebuild it with scripts/embed.py",
             )
-        found = index.similar_to(item_uid, k=want, domain=domain)
+        found = index.similar_to_vector(
+            index.vector_for(query), k=want, domain=domain,
+            exclude=_outvoted(conn) | {query, work_uid},
+        )
+
+    found = _as_works(conn, found, {work_uid})
+    if domain is not None:
+        # Checked again after translation: a stale row filed under one domain
+        # can belong to a work another domain represents.
+        found = [n for n in found if n.domain == domain]
 
     kept: list[Any] = []
     n_suppressed = 0
@@ -382,7 +443,15 @@ def recommend(
         for uid in ratings:
             exclude |= franchise_representatives(conn, uid)
 
-    found = index.similar_to_vector(profile.vector, k=k, domain=domain, exclude=exclude)
+    # Over-fetched and translated for the same reason as /api/similar: a stale
+    # matrix can hold a second row of a work you rated, under another uid.
+    found = index.similar_to_vector(
+        profile.vector, k=2 * k, domain=domain, exclude=exclude | _outvoted(conn)
+    )
+    found = _as_works(conn, found, exclude)
+    if domain is not None:
+        found = [n for n in found if n.domain == domain]
+    found = found[:k]
     items = {i.item_uid: i for i in (get_item(conn, n.item_uid) for n in found) if i is not None}
     return RecommendPage(
         domain=domain,

@@ -1,0 +1,18 @@
+{
+  "head": {"vars": ["mal", "tv", "movie"]},
+  "results": {
+    "bindings": [
+      {"mal": {"type": "literal", "value": "9253"}, "tv": {"type": "literal", "value": "42509"}},
+      {"mal": {"type": "literal", "value": "790"}, "tv": {"type": "literal", "value": "31935"}},
+      {"mal": {"type": "literal", "value": "199"}, "movie": {"type": "literal", "value": "129"}},
+      {"mal": {"type": "literal", "value": "16498"}, "tv": {"type": "literal", "value": "1429"}},
+      {"mal": {"type": "literal", "value": "25777"}, "tv": {"type": "literal", "value": "1429"}},
+      {"mal": {"type": "literal", "value": "777"}, "tv": {"type": "literal", "value": "500"}},
+      {"mal": {"type": "literal", "value": "777"}, "movie": {"type": "literal", "value": "500"}},
+      {"mal": {"type": "literal", "value": " 9253 "}, "tv": {"type": "literal", "value": "42509"}},
+      {"mal": {"type": "literal", "value": "not-an-id"}, "tv": {"type": "literal", "value": "77"}},
+      {"tv": {"type": "literal", "value": "88"}},
+      {"mal": {"type": "literal", "value": "5114"}}
+    ]
+  }
+}

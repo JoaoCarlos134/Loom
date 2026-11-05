@@ -152,6 +152,14 @@ class Settings(BaseSettings):
     musicbrainz_rate_per_min: float = 45.0
     musicbrainz_max_retries: int = 8
 
+    # Wikidata's MyAnimeList <-> TMDB cross-references (CC0), one SPARQL query.
+    # They are what lets the linker see that an anime and its own TMDB TV or
+    # film entry are one work. A local JSON file (a saved query result)
+    # overrides the request.
+    wikidata_sparql_url: str = "https://query.wikidata.org/sparql"
+    wikidata_idmap_path: str = ""
+    wikidata_max_retries: int = 4
+
     # MyAnimeList user ratings, from the same Kaggle archive as the anime
     # table. Rows read, not rows written: ~40% carry no score and are skipped.
     mal_ratings_filename: str = "animelists_cleaned.csv"

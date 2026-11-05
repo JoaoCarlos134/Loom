@@ -166,6 +166,7 @@ def _anchors(
            JOIN items s ON s.item_uid = ls.item_uid AND s.source = ?
            JOIN links lr ON lr.work_uid = ls.work_uid
            JOIN items r ON r.item_uid = lr.item_uid AND r.source = ?
+                       AND r.domain = s.domain
            WHERE s.domain = ? AND s.popularity > 0 AND r.popularity > 0""",
         (source, reference, domain),
     ).fetchall()
@@ -190,10 +191,18 @@ def _share_within_works(
 
     Necessary rather than cosmetic: ordering happens in SQL against the stored
     value, so filling the gap after the query would come too late to fix it.
+
+    Shared within a work's rows *of one domain*. A work can span domains -- an
+    anime and its TMDB TV entry, joined through ``id_map`` -- and the scales
+    were calibrated per domain: a TMDB vote count and a MAL member count are not
+    two readings of one number, so the larger of them means nothing.
     """
-    members: dict[str, list[str]] = {}
-    for item_uid, work_uid in conn.execute("SELECT item_uid, work_uid FROM links"):
-        members.setdefault(work_uid, []).append(item_uid)
+    members: dict[tuple[str, str], list[str]] = {}
+    for item_uid, work_uid, domain in conn.execute(
+        "SELECT l.item_uid, l.work_uid, i.domain FROM links l "
+        "JOIN items i ON i.item_uid = l.item_uid"
+    ):
+        members.setdefault((work_uid, domain), []).append(item_uid)
 
     shared = dict(values)
     for group in members.values():

@@ -90,6 +90,12 @@ def _goodbooks_ratings(settings: Settings) -> IngestRunner:
     return GoodbooksRatingsLoader(settings)
 
 
+def _idmap_wikidata(settings: Settings) -> IngestRunner:
+    from recsys.ingest.idmap_wikidata import WikidataIdMapLoader
+
+    return WikidataIdMapLoader(settings)
+
+
 # name -> factory. Adding a source is one line here plus its module.
 REGISTRY: dict[str, Callable[[Settings], IngestRunner]] = {
     "anime_jikan": _jikan,
@@ -104,6 +110,7 @@ REGISTRY: dict[str, Callable[[Settings], IngestRunner]] = {
     "music_musicbrainz": _musicbrainz,
     "anime_mal_ratings": _mal_ratings,
     "book_goodbooks_ratings": _goodbooks_ratings,
+    "idmap_wikidata": _idmap_wikidata,
 }
 
 

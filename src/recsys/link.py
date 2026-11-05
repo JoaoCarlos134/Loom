@@ -17,6 +17,23 @@ is populated by every anime source: the CSV dump writes the id it was keyed on,
 Jikan returns it, and AniList returns it as ``idMal``. So resolution here is an
 integer join with no thresholds and no false positives. Fuzzy matching is a
 different, much harder problem, and nothing here pretends to solve it.
+
+**A row can also join a work through ``id_map``**, an exact claim made by a
+third party: Wikidata says TMDB show 42509 *is* MyAnimeList anime 9253. That is
+how an anime and its own TMDB TV or film entry become one work, across domains,
+without a title comparison anywhere. Two rules keep it safe:
+
+* **A mapped row never represents the work.** It joined on the map's word, not
+  its own, and electing it would move *Steins;Gate* out of the anime domain
+  because TMDB lists more keywords than AniList lists tags. It still lends the
+  work its text, poster and keywords through ``fill_from_siblings`` and the
+  embedding document.
+* **A row the map assigns to several works is refused.** TMDB keeps one show
+  where MAL keeps a work per season, and when Wikidata ties that show to two
+  seasons' MAL ids, joining it to one is a guess and to all of them merges the
+  seasons. It stays its own work and is counted, so the report says how much
+  the map could not settle. (When Wikidata ties the show to one season only,
+  it joins that season: that is what the claim says.)
 """
 
 from __future__ import annotations
@@ -50,6 +67,8 @@ class LinkResult:
     n_works: int = 0  # groups of 2+ rows found
     n_linked: int = 0  # rows belonging to such a group
     n_collapsed: int = 0  # rows hidden from listings (n_linked - n_works)
+    n_aliased: int = 0  # rows joined to a work through an id_map claim
+    n_ambiguous: int = 0  # rows id_map assigns to several works, left unlinked
 
 
 def _richness(row: sqlite3.Row) -> tuple:
@@ -84,13 +103,41 @@ def _richness(row: sqlite3.Row) -> tuple:
     )
 
 
-def _groups(rows: Iterable[sqlite3.Row]) -> dict[str, list[sqlite3.Row]]:
+@dataclass
+class _Member:
+    row: sqlite3.Row
+    #: True when the row carries the work's id itself, False when it joined
+    #: through an ``id_map`` claim.
+    native: bool
+
+
+def _aliases(conn: sqlite3.Connection) -> dict[tuple[str, str, str], set[str]]:
+    """(domain, alias_key, alias_value) -> the work uids ``id_map`` says it is."""
+    out: dict[tuple[str, str, str], set[str]] = defaultdict(set)
+    for r in conn.execute(
+        "SELECT work_domain, key, value, domain, alias_key, alias_value FROM id_map"
+    ):
+        out[(r["domain"], r["alias_key"], r["alias_value"])].add(
+            make_work_uid(r["work_domain"], r["key"], r["value"])
+        )
+    return out
+
+
+def _groups(
+    rows: Iterable[sqlite3.Row],
+    aliases: dict[tuple[str, str, str], set[str]] | None = None,
+    result: LinkResult | None = None,
+) -> dict[str, list[_Member]]:
     """Bucket rows by the work they describe.
 
     A row carrying several linkable ids joins the bucket of the first key in
-    ``LINK_KEYS`` it has, so one row never lands in two groups.
+    ``LINK_KEYS`` it has, so one row never lands in two groups. A row carrying
+    none may join one through ``aliases`` -- but only a bucket that has a row of
+    its own, since a claim about a work the catalog does not carry links
+    nothing, and only when the claims name exactly one work.
     """
-    out: dict[str, list[sqlite3.Row]] = defaultdict(list)
+    out: dict[str, list[_Member]] = defaultdict(list)
+    pending: list[tuple[str, sqlite3.Row]] = []
     for row in rows:
         try:
             ids: dict[str, Any] = json.loads(row["external_ids"] or "{}")
@@ -99,8 +146,24 @@ def _groups(rows: Iterable[sqlite3.Row]) -> dict[str, list[sqlite3.Row]]:
         for key in LINK_KEYS:
             value = ids.get(key)
             if value not in (None, ""):
-                out[make_work_uid(row["domain"], key, str(value))].append(row)
+                out[make_work_uid(row["domain"], key, str(value))].append(_Member(row, True))
                 break
+        else:
+            if not aliases:
+                continue
+            named: set[str] = set()
+            for key, value in ids.items():
+                named |= aliases.get((row["domain"], key, str(value)), set())
+            if len(named) == 1:
+                pending.append((next(iter(named)), row))
+            elif len(named) > 1 and result is not None:
+                result.n_ambiguous += 1
+
+    for work_uid, row in pending:
+        if work_uid in out:  # never create a work out of claims alone
+            out[work_uid].append(_Member(row, False))
+            if result is not None:
+                result.n_aliased += 1
     return out
 
 
@@ -124,16 +187,17 @@ def rebuild_links(conn: sqlite3.Connection) -> LinkResult:
     result = LinkResult()
     to_insert: list[tuple[str, str, int]] = []
 
-    for work_uid, members in _groups(rows).items():
+    for work_uid, members in _groups(rows, _aliases(conn), result).items():
         if len(members) < 2:
             continue
-        winner = max(members, key=_richness)["item_uid"]
+        # A row that is the work by its own account outranks one that joined on
+        # a map's say-so, whatever either contains; content decides the rest.
+        winner = max(members, key=lambda m: (m.native, _richness(m.row))).row["item_uid"]
         result.n_works += 1
         result.n_linked += len(members)
-        for row in members:
-            to_insert.append(
-                (row["item_uid"], work_uid, 1 if row["item_uid"] == winner else 0)
-            )
+        for member in members:
+            uid = member.row["item_uid"]
+            to_insert.append((uid, work_uid, 1 if uid == winner else 0))
 
     result.n_collapsed = result.n_linked - result.n_works
 
@@ -145,8 +209,10 @@ def rebuild_links(conn: sqlite3.Connection) -> LinkResult:
         )
 
     log.info(
-        "links: %d works span %d rows; %d rows collapsed out of listings",
+        "links: %d works span %d rows; %d rows collapsed out of listings; "
+        "%d rows joined through id_map, %d refused as ambiguous",
         result.n_works, result.n_linked, result.n_collapsed,
+        result.n_aliased, result.n_ambiguous,
     )
     return result
 

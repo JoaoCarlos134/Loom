@@ -187,6 +187,25 @@ MIGRATION_6 = """
 CREATE INDEX idx_relations_relation ON relations(relation, src_item_uid);
 """
 
+# `id_map` holds identity claims made by a third party rather than by either
+# row: "the row in `domain` whose external_ids[alias_key] is alias_value is the
+# work that `work_domain` knows as key=value". Wikidata is the first such
+# source -- TMDB rows carry no MAL id, so the anime and its own TMDB entry
+# could not be linked on anything the rows themselves say. Exact ids, never
+# titles. `source` scopes a reload, so each map replaces only its own rows.
+MIGRATION_7 = """
+CREATE TABLE id_map (
+    source      TEXT NOT NULL,
+    work_domain TEXT NOT NULL,
+    key         TEXT NOT NULL,
+    value       TEXT NOT NULL,
+    domain      TEXT NOT NULL,
+    alias_key   TEXT NOT NULL,
+    alias_value TEXT NOT NULL,
+    PRIMARY KEY (source, work_domain, key, value, domain, alias_key, alias_value)
+) WITHOUT ROWID;
+"""
+
 # Append new migrations here; never modify an existing entry.
 MIGRATIONS: list[tuple[int, str]] = [
     (1, MIGRATION_1),
@@ -195,6 +214,7 @@ MIGRATIONS: list[tuple[int, str]] = [
     (4, MIGRATION_4),
     (5, MIGRATION_5),
     (6, MIGRATION_6),
+    (7, MIGRATION_7),
 ]
 
 SCHEMA_VERSION = MIGRATIONS[-1][0]
@@ -338,6 +358,28 @@ def upsert_ratings(
     with conn:  # single transaction
         conn.executemany(_UPSERT_RATING_SQL, rows)
     return len(rows)
+
+
+#: One ``id_map`` claim: (work_domain, key, value, domain, alias_key, alias_value).
+IdMapRow = tuple[str, str, str, str, str, str]
+
+
+def replace_id_map(conn: sqlite3.Connection, source: str, rows: Iterable[IdMapRow]) -> int:
+    """Replace every ``id_map`` claim ``source`` makes. Returns rows written.
+
+    Wholesale, like the derived tables: a map is a snapshot of what its source
+    asserts today, and a claim it has since withdrawn must not survive a reload.
+    Other sources' claims are untouched.
+    """
+    unique = sorted(set(rows))
+    with conn:
+        conn.execute("DELETE FROM id_map WHERE source = ?", (source,))
+        conn.executemany(
+            "INSERT INTO id_map (source, work_domain, key, value, domain, alias_key, "
+            "alias_value) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [(source, *row) for row in unique],
+        )
+    return len(unique)
 
 
 def set_rating(
@@ -648,6 +690,12 @@ def query_items(
 #: through `link.work_members()`.
 _FILLABLE = ("year", "description", "popularity", "mean_rating", "n_ratings", "image_url")
 
+#: Of those, the ones that count an audience. A work can span domains -- an
+#: anime and its TMDB TV entry -- and a TMDB vote count or vote average is not
+#: a reading of the anime's MAL audience, so these come only from rows filed
+#: under the representative's own domain.
+_SAME_DOMAIN_ONLY = frozenset({"popularity", "mean_rating", "n_ratings"})
+
 
 def fill_from_siblings(
     conn: sqlite3.Connection, items: list[UnifiedItem]
@@ -675,7 +723,8 @@ def fill_from_siblings(
                 FROM links mine
                 JOIN links theirs ON theirs.work_uid = mine.work_uid
                 JOIN items i ON i.item_uid = theirs.item_uid
-                WHERE mine.item_uid IN ({marks}) AND theirs.item_uid != mine.item_uid""",
+                WHERE mine.item_uid IN ({marks}) AND theirs.item_uid != mine.item_uid
+                ORDER BY theirs.item_uid""",
             list(chunk),
         ):
             donors.setdefault(row["target"], []).append(row)
@@ -690,7 +739,16 @@ def fill_from_siblings(
             field: value
             for field in _FILLABLE
             if getattr(item, field) is None
-            for value in (next((r[field] for r in rows if r[field] is not None), None),)
+            for value in (
+                next(
+                    (
+                        r[field] for r in rows
+                        if r[field] is not None
+                        and (field not in _SAME_DOMAIN_ONLY or r["domain"] == item.domain)
+                    ),
+                    None,
+                ),
+            )
             if value is not None
         }
         filled.append(item.model_copy(update=patch) if patch else item)

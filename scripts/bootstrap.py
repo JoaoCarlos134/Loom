@@ -96,6 +96,9 @@ def report(
         print("\nEntity resolution")
         print(f"  {links.n_works} works span {links.n_linked} rows; "
               f"{links.n_collapsed} duplicate rows hidden from listings")
+        if links.n_aliased or links.n_ambiguous:
+            print(f"  {links.n_aliased} rows joined a work through id_map; "
+                  f"{links.n_ambiguous} left alone because the map names several works")
 
     if pops is not None and pops.scales:
         print("\nPopularity calibration")
