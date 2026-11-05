@@ -421,3 +421,24 @@ async def test_another_deezer_error_is_no_answer_and_is_not_kept(settings):
     assert await ingester._get_json(url, params, deezer=True) is None
     await ingester.aclose()
     assert ingester.cache.get(f"{url}?{sorted(params.items())}") is None
+
+
+async def test_an_error_body_cached_by_an_older_version_is_fetched_again(settings):
+    """Before Deezer's error bodies were refused, an over-quota answer went into
+    the cache like any other. A full build reuses the cache (and the documented
+    re-ingest sets it never to expire), so trusting that envelope would leave
+    the artist without a picture forever."""
+    import httpx
+
+    ingester = MusicBrainzIngester(settings)
+    ingester.deezer_limiter = Recorder("deezer", [])
+    url, params = f"{ingester.deezer_url}/search/artist", {"q": "Hans Zimmer", "limit": 1}
+    key = f"{url}?{sorted(params.items())}"
+    ingester.cache.set(key, {"error": {"type": "Exception", "message": "Quota limit exceeded",
+                                       "code": 4}})
+    answer = {"data": [{"name": "Hans Zimmer", "nb_fan": 7, "id": 1}]}
+    ingester._client = transport_for(lambda request: httpx.Response(200, json=answer))
+    payload = await ingester._get_json(url, params, deezer=True)
+    await ingester.aclose()
+    assert payload == answer
+    assert ingester.cache.get(key) == answer

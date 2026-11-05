@@ -245,7 +245,10 @@ class MusicBrainzIngester(Ingester):
     async def _get_json(self, url: str, params: dict[str, Any], *, deezer: bool = False) -> Any:
         """One GET, cached, paced by the limiter of the service it goes to."""
         cached = self.cache.get(f"{url}?{sorted(params.items())}")
-        if cached is not None:
+        # An error body is never an answer; versions before this check cached
+        # Deezer's over-quota replies, and a cache set never to expire would
+        # serve them for good. Such an envelope is a miss and is fetched again.
+        if cached is not None and not (isinstance(cached, dict) and cached.get("error")):
             self.n_cached += 1
             return cached
 
