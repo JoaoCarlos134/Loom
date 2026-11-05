@@ -101,6 +101,10 @@ class Settings(BaseSettings):
     # takes its own floor rather than the film one.
     tmdb_min_votes: int = 50
     tmdb_tv_min_votes: int = 25
+    # TMDB's terms forbid storing API data for longer than six months. The full
+    # build (scripts/build.py) treats TMDB data older than this as not built,
+    # and fetches it again.
+    tmdb_max_age_days: int = 180
     tmdb_rate_per_sec: float = 20.0
     tmdb_rate_per_min: float = 0.0  # 0 disables the per-minute window
     tmdb_max_retries: int = 5
