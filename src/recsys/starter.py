@@ -454,6 +454,7 @@ def _swap_in(stage: Path, data_dir: Path, names: list[str]) -> Path:
     backup = data_dir / f".starter-replaced-{datetime.now(UTC):%Y%m%dT%H%M%S}"
     moved: list[str] = []
     placed: list[str] = []
+    created: list[Path] = []  # directories this swap made, deepest last
     try:
         for name in _REPLACED:
             if (data_dir / name).exists():
@@ -462,19 +463,52 @@ def _swap_in(stage: Path, data_dir: Path, names: list[str]) -> Path:
                 moved.append(name)
         for name in names:
             dest = data_dir / name
-            dest.parent.mkdir(parents=True, exist_ok=True)
+            if not dest.parent.exists():
+                dest.parent.mkdir(parents=True)
+                created.append(dest.parent)
             os.replace(stage / name, dest)
             placed.append(name)
     except OSError as exc:
-        for name in placed:
-            (data_dir / name).unlink(missing_ok=True)
-        for name in moved:
-            os.replace(backup / name, data_dir / name)
+        problems = _roll_back(data_dir, backup, moved, placed, created)
+        if problems:
+            raise StarterError(
+                f"could not put the pack in place ({exc}), and could not fully put the "
+                f"old catalog back ({'; '.join(problems)}). It is in {backup}."
+            ) from exc
         raise StarterError(
             f"could not put the pack in place ({exc}); nothing was changed. Close Loom if "
             "it is running and try again."
         ) from exc
     return backup
+
+
+def _roll_back(data_dir: Path, backup: Path, moved: list[str], placed: list[str],
+               created: list[Path]) -> list[str]:
+    """Undo a partial swap. Returns what could not be undone (empty when all was).
+
+    The directories the swap created go first: Windows will not rename a
+    directory onto an existing one, even an empty one, so a fresh `features`
+    left behind would block putting the old one back.
+    """
+    problems: list[str] = []
+    for name in placed:
+        try:
+            (data_dir / name).unlink(missing_ok=True)
+        except OSError as exc:
+            problems.append(f"{name}: {exc}")
+    for directory in reversed(created):
+        try:
+            directory.rmdir()
+        except OSError as exc:
+            problems.append(f"{directory.name}: {exc}")
+    for name in moved:
+        try:
+            os.replace(backup / name, data_dir / name)
+        except OSError as exc:
+            problems.append(f"{name}: {exc}")
+    if not problems:
+        shutil.rmtree(backup, ignore_errors=True)
+    return problems
 
 
 @dataclass

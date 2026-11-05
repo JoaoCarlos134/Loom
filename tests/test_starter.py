@@ -350,6 +350,9 @@ def test_a_failed_swap_puts_everything_back(pack, tmp_path, monkeypatch):
         calls["n"] += 1
         if str(src).endswith("embeddings.parquet") and ".starter-unpack" in str(src):
             raise PermissionError("locked by another process")
+        # As Windows behaves: no renaming a directory onto an existing one.
+        if Path(src).is_dir() and Path(dst).exists():
+            raise PermissionError("[WinError 5] Access is denied")
         return real_replace(src, dst)
 
     monkeypatch.setattr(starter.os, "replace", flaky)
