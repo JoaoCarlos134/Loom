@@ -310,3 +310,55 @@ def test_registry_exposes_the_ingester(settings):
     assert "music_musicbrainz" in available()
     ingester = get_ingester("music_musicbrainz", settings)
     assert (ingester.domain, ingester.source) == ("music", "musicbrainz")
+
+
+# ---- pictures -------------------------------------------------------------
+#
+# MusicBrainz has no images, so every music card said "no image" -- 6,556 of
+# 6,556. Deezer, already asked for the audience count, returns the artist's
+# picture in the same search answer.
+
+DZ = "https://e-cdns-images.dzcdn.net/images/artist"
+
+
+def test_deezers_picture_is_the_artists_image():
+    item = map_artist(artist(_deezer_picture=f"{DZ}/7a1b2c/500x500-000000-80-0-0.jpg"))
+    assert item.image_url == f"{DZ}/7a1b2c/500x500-000000-80-0-0.jpg"
+
+
+@pytest.mark.parametrize("url", [
+    f"{DZ}//500x500-000000-80-0-0.jpg",  # an empty hash: Deezer has no picture
+    f"{DZ}/d41d8cd98f00b204e9800998ecf8427e/500x500-000000-80-0-0.jpg",  # md5("")
+    "", None, "not a url",
+])
+def test_deezers_placeholder_is_no_image(url):
+    assert map_artist(artist(_deezer_picture=url)).image_url is None
+
+
+async def test_the_picture_comes_from_the_answer_already_fetched(settings, seeded, monkeypatch):
+    calls = []
+
+    async def fake(self, url, params, *, limited):
+        calls.append(url)
+        if "deezer" in url:
+            return {"data": [{"name": "Hans Zimmer", "nb_fan": 12345, "id": 7,
+                              "picture_big": f"{DZ}/ab12/500x500-000000-80-0-0.jpg",
+                              "picture_xl": f"{DZ}/ab12/1000x1000-000000-80-0-0.jpg"}]}
+        return {"artists": [{"id": "mbid-1", "name": "Hans Zimmer", "score": 100,
+                             "type": "Person", "tags": []}]}
+
+    monkeypatch.setattr(MusicBrainzIngester, "_get_json", fake)
+    upsert_items(seeded, [film("1", [("Hans Zimmer", "Original Music Composer")])])
+    await MusicBrainzIngester(settings).run(seeded)
+
+    row = seeded.execute("SELECT image_url FROM items WHERE domain='music'").fetchone()
+    assert row["image_url"] == f"{DZ}/ab12/500x500-000000-80-0-0.jpg"
+    assert len(calls) == 2  # one MusicBrainz search, one Deezer search; no extra request
+
+
+def test_deezer_is_held_under_its_documented_limit(settings):
+    """Deezer allows 50 requests per 5 seconds per IP. Once MusicBrainz answers
+    come from the cache, nothing else paces the Deezer calls."""
+    ingester = MusicBrainzIngester(settings)
+    assert settings.deezer_rate_per_sec * 5 < 50
+    assert ingester.deezer_limiter is not None

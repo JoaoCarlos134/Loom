@@ -244,3 +244,22 @@ def test_no_network_at_module_load():
     import recsys.ingest.book_goodbooks as mod
 
     assert mod.FILES == ("books.csv", "book_tags.csv", "tags.csv")
+
+
+# ---- covers ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize("url", [
+    "https://s.gr-assets.com/assets/nophoto/book/111x148-bcc042a9c91a29c1d680899eff700a03.png",
+    "https://s.gr-assets.com/assets/nophoto/book/50x75-a91bf249278a81aabab721ef782c4a74.png",
+])
+def test_a_goodreads_placeholder_is_no_cover(hunger_games, url):
+    """3,332 of goodbooks-10k's 10,000 books carry Goodreads' "nophoto"
+    placeholder. Stored as a cover it hid the gap from fill_from_siblings,
+    which only fills a missing value, and showed a grey book on the card."""
+    hunger_games["image_url"] = url
+    assert map_goodbooks_row(hunger_games).image_url is None
+
+
+def test_a_real_cover_survives(hunger_games):
+    assert map_goodbooks_row(hunger_games).image_url.endswith("/2767052.jpg")

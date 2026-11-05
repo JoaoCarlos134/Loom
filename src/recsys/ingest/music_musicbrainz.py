@@ -86,6 +86,20 @@ def normalise_name(name: str) -> str:
     return " ".join(name.split()).casefold()
 
 
+#: Deezer's stand-in when it has no picture: an empty image hash, or the md5 of
+#: the empty string. Either way a silhouette, not the artist.
+_DEEZER_PLACEHOLDERS = ("/images/artist//", "/d41d8cd98f00b204e9800998ecf8427e/")
+
+
+def deezer_picture(value: Any) -> str | None:
+    """A Deezer artist picture URL, or ``None`` for none or the placeholder."""
+    if not isinstance(value, str) or not value.startswith("https://"):
+        return None
+    if any(mark in value for mark in _DEEZER_PLACEHOLDERS):
+        return None
+    return value
+
+
 def map_artist(
     raw: dict[str, Any], *, fetched_at: Any = None, min_tag_count: int = 1
 ) -> UnifiedItem | None:
@@ -138,7 +152,9 @@ def map_artist(
         popularity=float(fans) if isinstance(fans, int) and fans > 0 else None,
         mean_rating=None,  # nobody rated anything here
         n_ratings=None,
-        image_url=None,
+        # Hot-linked, never downloaded: Deezer does not allow its images to be
+        # stored. The URL is the whole of what Loom keeps.
+        image_url=deezer_picture(raw.get("_deezer_picture")),
         fetched_at=fetched_at or utcnow(),
         # Keeps the match score and which titles they scored, so a bad match can
         # be found later without re-querying.
@@ -165,6 +181,9 @@ class MusicBrainzIngester(Ingester):
         self.limiter = RateLimiter(
             settings.musicbrainz_rate_per_sec, settings.musicbrainz_rate_per_min
         )
+        # Deezer's own ceiling. MusicBrainz's 1/s used to pace these calls by
+        # accident; once its answers come from the cache, nothing else would.
+        self.deezer_limiter = RateLimiter(settings.deezer_rate_per_sec, 0.0)
         self.cache = DiskCache(settings.cache_dir, SOURCE, settings.http_cache_ttl_days)
         self._client: httpx.AsyncClient | None = None
 
@@ -227,8 +246,7 @@ class MusicBrainzIngester(Ingester):
         client = self._get_client()
         last_error = "unknown"
         for attempt in range(self.max_retries):
-            if limited:
-                await self.limiter.acquire()
+            await (self.limiter if limited else self.deezer_limiter).acquire()
             try:
                 resp = await client.get(url, params=params)
             except httpx.HTTPError as exc:
@@ -281,11 +299,14 @@ class MusicBrainzIngester(Ingester):
                 return candidate
         return None
 
-    async def _deezer_fans(self, name: str) -> tuple[int | None, int | None]:
-        """(fan count, deezer id) for an artist, or (None, None).
+    async def _deezer_fans(
+        self, name: str
+    ) -> tuple[int | None, int | None, str | None]:
+        """(fan count, deezer id, picture URL) for an artist, or all ``None``.
 
-        Deezer is not rate limited the way MusicBrainz is and is queried without
-        the limiter. A failure here costs a popularity number, not the run.
+        Paced by its own limiter at Deezer's documented 50 requests per five
+        seconds. A failure here costs a popularity number and a picture, not
+        the run.
         """
         try:
             payload = await self._get_json(
@@ -293,14 +314,21 @@ class MusicBrainzIngester(Ingester):
             )
         except Exception as exc:
             log.debug("deezer lookup failed for %r: %s", name, exc)
-            return (None, None)
+            return (None, None, None)
         for entry in (payload or {}).get("data") or []:
             if not isinstance(entry, dict):
                 continue
             if normalise_name(entry.get("name") or "") == normalise_name(name):
                 fans = entry.get("nb_fan")
-                return (int(fans) if isinstance(fans, int) else None, entry.get("id"))
-        return (None, None)
+                # 500x500: sharp on a card, a quarter of the bytes of the 1000px
+                # picture. Falls back to whatever size the answer carries.
+                picture = next(
+                    (entry[k] for k in ("picture_big", "picture_xl", "picture_medium")
+                     if deezer_picture(entry.get(k))),
+                    None,
+                )
+                return (int(fans) if isinstance(fans, int) else None, entry.get("id"), picture)
+        return (None, None, None)
 
     # ---- Ingester contract ------------------------------------------------
 
@@ -335,13 +363,16 @@ class MusicBrainzIngester(Ingester):
             if artist is None:
                 self.n_skipped += 1
             else:
-                fans, deezer_id = (None, None)
+                fans, deezer_id, picture = (None, None, None)
                 if self.use_deezer:
-                    fans, deezer_id = await self._deezer_fans(artist.get("name") or name)
+                    fans, deezer_id, picture = await self._deezer_fans(
+                        artist.get("name") or name
+                    )
                 artist["_scored_titles"] = scored
                 artist["_credited_as"] = name
                 artist["_deezer_fans"] = fans
                 artist["_deezer_id"] = deezer_id
+                artist["_deezer_picture"] = picture
                 matched += 1
                 yield artist
             if n % 200 == 0:

@@ -137,6 +137,19 @@ def _year(value: Any) -> int | None:
     return year if 1000 <= year <= 2100 else None
 
 
+def _cover(value: Any) -> str | None:
+    """The cover URL, or ``None`` for Goodreads' "nophoto" placeholder.
+
+    A third of this dump points at that grey silhouette. Stored as a cover it
+    is not a gap, so ``fill_from_siblings`` -- which fills only what is
+    missing -- could never replace it with a real one from Open Library.
+    """
+    url = _clean(value)
+    if url is None or "/nophoto/" in url:
+        return None
+    return url
+
+
 def map_goodbooks_row(
     raw: dict[str, Any], *, tags: list[str] | None = None, fetched_at: Any = None
 ) -> UnifiedItem | None:
@@ -189,7 +202,7 @@ def map_goodbooks_row(
         popularity=float(n_ratings) if n_ratings else None,
         mean_rating=mean_rating,
         n_ratings=n_ratings,
-        image_url=_clean(raw.get("image_url")),
+        image_url=_cover(raw.get("image_url")),
         fetched_at=fetched_at or utcnow(),
         raw_json=raw,
     )

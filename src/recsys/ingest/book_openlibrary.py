@@ -67,6 +67,13 @@ _SUBJECT_NOISE = (
     "bestseller", "award", "book club", "reading group",
 )
 
+#: Covers are hot-linked by cover id. The cover service rate-limits lookups by
+#: ISBN to 100 per IP every five minutes, and lookups by cover id not at all --
+#: so a browser showing a page of forty books must never be sent to the ISBN
+#: form. The id is what an ISBN lookup resolves to on their side, and the batch
+#: call this ingester already makes returns it for the edition.
+COVER_URL = "https://covers.openlibrary.org/b/id/{}-M.jpg"
+
 #: Machine-generated headings: a lowercase namespace, a colon, no space.
 #: Open Library carries a lot of these -- ``series:harry_potter``,
 #: ``nyt:series_books=2008-03-15`` -- and they are catalogue plumbing. A real
@@ -100,6 +107,20 @@ def clean_description(value: Any) -> str | None:
     return text.strip() or None
 
 
+def cover_url(*candidates: Any) -> str | None:
+    """The first usable cover id among lists of them, as a URL.
+
+    Open Library marks a deleted cover with -1, so only positive integers count.
+    The edition's own cover comes first -- it is the printing the ISBN names,
+    exactly what the ISBN lookup would show -- then the work's.
+    """
+    for ids in candidates:
+        for cover in ids if isinstance(ids, list) else []:
+            if isinstance(cover, int) and not isinstance(cover, bool) and cover > 0:
+                return COVER_URL.format(cover)
+    return None
+
+
 def map_openlibrary(
     raw: dict[str, Any], *, fetched_at: Any = None, max_subjects: int = MAX_SUBJECTS
 ) -> UnifiedItem | None:
@@ -116,9 +137,12 @@ def map_openlibrary(
         if isinstance(s, str) and is_descriptive(s)
     ][:max_subjects]
 
-    # A row with neither prose nor subjects adds nothing the goodbooks row does
-    # not already have, and would only dilute the primary election.
-    if not description and not subjects:
+    image_url = cover_url(raw.get("_edition_covers"), raw.get("covers"))
+
+    # A row with no prose, no subjects and no cover adds nothing the goodbooks
+    # row does not already have. One with only a cover is kept: it loses the
+    # primary election on content and lends the cover to the work.
+    if not description and not subjects and image_url is None:
         return None
 
     creators = [
@@ -149,7 +173,7 @@ def map_openlibrary(
         popularity=None,
         mean_rating=None,
         n_ratings=None,
-        image_url=None,
+        image_url=image_url,
         fetched_at=fetched_at or utcnow(),
         raw_json=raw,
     )
@@ -296,6 +320,8 @@ class OpenLibraryIngester(Ingester):
                     extra[isbn] = {
                         "title": details.get("title"),
                         "_authors": details.get("authors"),
+                        # The edition's cover ids, already in this answer.
+                        "_edition_covers": details.get("covers") or [],
                     }
 
         log.info("%s: %d of %d ISBNs resolved to a work", self.name, len(work_of), len(isbns))

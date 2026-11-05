@@ -140,7 +140,9 @@ class Settings(BaseSettings):
     # them. This goes into that header; point it at your own repo or email.
     musicbrainz_contact: str = "https://github.com/JoaoCarlos134/Loom"
     deezer_url: str = "https://api.deezer.com"
-    music_use_deezer: bool = True  # Deezer supplies the audience count
+    music_use_deezer: bool = True  # Deezer supplies the audience count and picture
+    # Deezer allows 50 requests per 5 seconds per IP. 8/s keeps a margin.
+    deezer_rate_per_sec: float = 8.0
     music_target_count: int = 0  # 0 = every credited composer
     # MusicBrainz scores each candidate 0-100; below this a name match is a guess.
     musicbrainz_min_score: int = 90

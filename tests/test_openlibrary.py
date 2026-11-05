@@ -264,3 +264,68 @@ def test_registry_exposes_the_ingester(settings):
     assert "book_openlibrary" in available()
     ingester = get_ingester("book_openlibrary", settings)
     assert (ingester.domain, ingester.source) == ("book", "openlibrary")
+
+
+# ---- covers ---------------------------------------------------------------
+#
+# Open Library's cover service answers by ISBN at 100 requests per IP every
+# five minutes, and by cover id without a limit. The ISBN lookup is a server
+# side resolution of the edition's cover id -- which the batch call this
+# ingester already makes returns in `details.covers`. So the cover is taken by
+# id from data already fetched, and no cover request is made at ingest at all.
+
+
+def test_the_editions_cover_is_the_books_image():
+    item = map_openlibrary(work(_edition_covers=[8231856], covers=[111]))
+    assert item.image_url == "https://covers.openlibrary.org/b/id/8231856-M.jpg"
+
+
+def test_the_works_cover_is_the_fallback():
+    """-1 is how Open Library marks a deleted cover."""
+    item = map_openlibrary(work(_edition_covers=[], covers=[-1, 678]))
+    assert item.image_url == "https://covers.openlibrary.org/b/id/678-M.jpg"
+
+
+@pytest.mark.parametrize("covers", [None, [], [-1], ["x"], [0]])
+def test_no_usable_cover_is_no_image(covers):
+    assert map_openlibrary(work(covers=covers)).image_url is None
+
+
+def test_a_record_with_only_a_cover_is_kept_to_lend_it():
+    """No prose and no subjects still adds something the goodbooks row may
+    lack. It loses the primary election and lends the cover through
+    fill_from_siblings."""
+    item = map_openlibrary(work(description=None, subjects=[], _edition_covers=[5]))
+    assert item is not None and item.image_url.endswith("/5-M.jpg")
+
+
+def test_a_cover_reaches_a_book_whose_goodreads_cover_was_a_placeholder(conn):
+    from recsys.db import get_item, upsert_items
+
+    upsert_items(conn, [
+        goodbooks_row(image_url=None),
+        map_openlibrary(work(description=None, subjects=[], _edition_covers=[5])),
+    ])
+    rebuild_links(conn)
+    item = get_item(conn, "book:goodbooks:2767052")
+    assert item.image_url == "https://covers.openlibrary.org/b/id/5-M.jpg"
+
+
+async def test_the_batch_call_carries_the_editions_cover_ids(seeded, settings, monkeypatch):
+    from recsys.db import upsert_items
+
+    async def fake(self, path, params=None):
+        if path == "/api/books":
+            return {"ISBN:0439023483": {"details": {
+                "title": "The Hunger Games", "covers": [8231856],
+                "works": [{"key": "/works/OL5735363W"}],
+            }}}
+        return {"key": "/works/OL5735363W", "title": "The Hunger Games",
+                "description": "Katniss.", "subjects": ["dystopia"]}
+
+    monkeypatch.setattr(OpenLibraryIngester, "_get_json", fake)
+    upsert_items(seeded, [goodbooks_row()])
+    ingester = OpenLibraryIngester(settings)
+    records = [r async for r in ingester.fetch()]
+    assert records[0]["_edition_covers"] == [8231856]
+    assert ingester.map_item(records[0]).image_url.endswith("/8231856-M.jpg")
