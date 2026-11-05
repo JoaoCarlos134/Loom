@@ -146,6 +146,7 @@ class MalRatingsLoader:
             filename=self.filename,
             explicit_path=self.explicit_path,
             setting_name="MAL_RATINGS_PATH",
+            token=self.settings.kaggle_api_token,
         )
 
     # ---- read -------------------------------------------------------------

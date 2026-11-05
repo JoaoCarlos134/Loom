@@ -25,7 +25,17 @@ SRC = ROOT / "src"
 if SRC.is_dir() and str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from recsys.build import STEPS, Build, Outcome, State, Step, clock, has_kaggle_credentials
+from recsys.build import (
+    STEPS,
+    Build,
+    Outcome,
+    State,
+    Step,
+    cf_is_fresh,
+    clock,
+    has_kaggle_credentials,
+    kaggle_refused_login,
+)
 from recsys.build import set_env_value as _set_env_value
 from recsys.config import REPO_ROOT, get_settings
 from recsys.db import init_db, session
@@ -41,7 +51,11 @@ def run_step(step: Step, *, embed_full: bool, state: State) -> Outcome:
         with session() as conn:
             result = asyncio.run(runner.run(conn))
         if result.status != "ok":
-            return Outcome("error", result.error or result.status)
+            explicit = settings.mal_csv_path if step.name == "anime_mal_csv" else (
+                settings.mal_ratings_path if step.name == "anime_mal_ratings" else "")
+            needs_login = step.needs == "kaggle" and not explicit and kaggle_refused_login(
+                result.error)
+            return Outcome("error", result.error or result.status, {"needs_login": needs_login})
         return Outcome("ok", f"{result.n_fetched:,} read, {result.n_inserted:,} new, "
                              f"{result.n_updated:,} updated")
     if step.kind == "derive":
@@ -65,18 +79,21 @@ def run_step(step: Step, *, embed_full: bool, state: State) -> Outcome:
         if embed_full:
             args.append("--full")
         code = subprocess.call(args)
+        n = fresh.n_works if embed_full else fresh.n_to_embed
         return Outcome("ok" if code == 0 else "error",
-                       f"{fresh.n_to_embed:,} works to embed" if code == 0 else f"exit {code}")
+                       f"{n:,} works embedded" if code == 0 else f"exit {code}")
     if step.kind == "cf":
         with session() as conn:
             n = int(conn.execute("SELECT COUNT(*) FROM ratings").fetchone()[0])
         last = state.steps.get("cf", {})
-        if settings.collaborative_path.is_file() and last.get("n_ratings") == n:
+        if cf_is_fresh(last, model_exists=settings.collaborative_path.is_file(), n_ratings=n):
             return Outcome("fresh", f"ratings unchanged ({n:,})", {"n_ratings": n})
         if not n:
             return Outcome("skipped", "no ratings to learn from")
         code = subprocess.call([sys.executable, str(ROOT / "scripts" / "cf.py")])
-        return Outcome("ok" if code == 0 else "error", f"{n:,} ratings", {"n_ratings": n})
+        if code != 0:
+            return Outcome("error", f"exit {code}")
+        return Outcome("ok", f"{n:,} ratings", {"n_ratings": n})
     raise ValueError(f"unknown step kind {step.kind!r}")
 
 
@@ -99,13 +116,46 @@ def save_tmdb(token: str) -> None:
 
 
 def ask_kaggle() -> bool:
-    answer = input("    Log in to Kaggle now (kagglehub asks for your username and key)? [Y/n] ")
-    if answer.strip().lower() not in ("", "y", "yes"):
+    print("    The MyAnimeList dump downloads through your Kaggle account. Create an API")
+    print("    token at https://www.kaggle.com/settings (API -> Create New Token).")
+    token = getpass.getpass("    Paste it here (input hidden), or press Enter to skip: ").strip()
+    if not token:
         return False
-    import kagglehub
-
-    kagglehub.login()
+    _set_env_value(REPO_ROOT / ".env", "KAGGLE_API_TOKEN", token,
+                   example=REPO_ROOT / ".env.example")
+    get_settings.cache_clear()
+    print(f"    saved to {REPO_ROOT / '.env'} (the one place Loom keeps credentials)")
     return True
+
+
+def finished_ingests() -> dict[str, str]:
+    """Each ingest step's last successful run, from ingest_runs -- read-only."""
+    import sqlite3
+
+    path = get_settings().db_path
+    if not path.is_file():
+        return {}
+    by_source = {}
+    conn = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
+    try:
+        for source, domain, finished in conn.execute(
+            "SELECT source, domain, MAX(finished_at) FROM ingest_runs "
+            "WHERE status = 'ok' GROUP BY source, domain"
+        ):
+            by_source[(source, domain)] = finished
+    except sqlite3.Error:
+        return {}
+    finally:
+        conn.close()
+    out = {}
+    for step in STEPS:
+        if step.kind != "ingest":
+            continue
+        runner = get_ingester(step.name, get_settings())
+        finished = by_source.get((runner.source, runner.domain))
+        if finished:
+            out[step.name] = finished
+    return out
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -131,11 +181,14 @@ def main(argv: list[str] | None = None) -> int:
     setup_logging()
     settings = get_settings()
     settings.ensure_dirs()
-    init_db()
+    if not args.status:  # --status reads; it does not migrate anything
+        init_db()
     state_path = settings.data_dir / "build-state.json"
     if args.restart:
         state_path.unlink(missing_ok=True)
     state = State.load(state_path)
+    if not args.restart:
+        state.seed(finished_ingests())
     interactive = sys.stdin.isatty() and not args.no_input
 
     build = Build(

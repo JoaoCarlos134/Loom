@@ -218,6 +218,7 @@ class MalCsvAnimeIngester(Ingester):
             filename=self.filename,
             explicit_path=self.explicit_path,
             setting_name="MAL_CSV_PATH",
+            token=self.settings.kaggle_api_token,
         )
 
     # ---- Ingester contract ------------------------------------------------

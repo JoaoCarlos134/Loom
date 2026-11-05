@@ -11,16 +11,26 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from recsys.build import STEPS, Build, Outcome, State, has_kaggle_credentials, set_env_value
+from recsys.build import (
+    STEPS,
+    Build,
+    Outcome,
+    State,
+    cf_is_fresh,
+    has_kaggle_credentials,
+    kaggle_refused_login,
+    set_env_value,
+)
 
 
 class Fake:
     """Records the steps it is asked to run; fails the ones it is told to."""
 
-    def __init__(self, fail=(), fail_once=()):
+    def __init__(self, fail=(), fail_once=(), raise_on=()):
         self.ran: list[str] = []
         self.fail = set(fail)
         self.fail_once = set(fail_once)
+        self.raise_on = set(raise_on)
 
     def __call__(self, step):
         self.ran.append(step.name)
@@ -28,7 +38,9 @@ class Fake:
             return Outcome("error", "boom")
         if step.name in self.fail_once:
             self.fail_once.discard(step.name)
-            return Outcome("error", "401 Unauthorized")
+            return Outcome("error", "UnauthenticatedError: 401", {"needs_login": True})
+        if step.name in self.raise_on:
+            raise RuntimeError("the step itself broke")
         return Outcome("ok")
 
 
@@ -165,3 +177,58 @@ def test_kaggle_credentials_are_found_where_kagglehub_looks(tmp_path):
     (tmp_path / ".kaggle").mkdir()
     (tmp_path / ".kaggle" / "kaggle.json").write_text("{}", encoding="utf-8")
     assert has_kaggle_credentials({}, tmp_path)
+
+
+
+def test_a_failure_that_is_not_a_login_refusal_never_asks_for_one(tmp_path):
+    """A missing MAL_CSV_PATH file or a network error is not Kaggle asking."""
+    asked = []
+    make(tmp_path, Fake(fail={"anime_mal_csv"}), ask_kaggle=lambda: asked.append(1) or True).run()
+    assert asked == []
+
+
+@pytest.mark.parametrize(("error", "refused"), [
+    ("UnauthenticatedError: You must be authenticated", True),
+    ("KaggleApiHTTPError: 403 Client Error: Forbidden", True),
+    ("FileNotFoundError: MAL_CSV_PATH does not exist: C:/x.csv", False),
+    ("ConnectError: [Errno 11001] getaddrinfo failed", False),
+    (None, False),
+])
+def test_only_an_authentication_error_reads_as_a_login_refusal(error, refused):
+    assert kaggle_refused_login(error) is refused
+
+
+def test_a_step_that_raises_is_recorded_and_the_build_goes_on(tmp_path):
+    fake = Fake(raise_on={"anime_anilist"})
+    build = make(tmp_path, fake)
+    assert build.run() == 1
+    assert build.state.steps["anime_anilist"]["status"] == "error"
+    assert "manga_anilist" in fake.ran
+
+
+def test_an_existing_bootstrap_counts_as_done(tmp_path):
+    """The first build.py on a catalog bootstrap already built must not start
+    from nothing -- and TMDB's clock starts at its real fetch."""
+    long_ago = (datetime.now(UTC) - timedelta(days=200)).isoformat()
+    build = make(tmp_path, Fake())
+    build.state.seed({"book_goodbooks": datetime.now(UTC).isoformat(), "movie_tmdb": long_ago})
+    planned = [s.name for s in build.plan()]
+    assert "book_goodbooks" not in planned
+    assert "movie_tmdb" in planned  # 200 days old: past the six-month limit
+
+
+def test_a_seed_never_overrides_what_build_py_recorded(tmp_path):
+    make(tmp_path, Fake(fail={"book_goodbooks"})).run()
+    build = make(tmp_path, Fake())
+    build.state.seed({"book_goodbooks": datetime.now(UTC).isoformat()})
+    assert build.state.steps["book_goodbooks"]["status"] == "error"
+
+
+def test_a_failed_collaborative_build_is_never_called_fresh():
+    """An error run still knew the ratings count; the old model file was still
+    there. Neither makes the model current."""
+    last_error = {"status": "error", "n_ratings": 10}
+    assert not cf_is_fresh(last_error, model_exists=True, n_ratings=10)
+    assert cf_is_fresh({"status": "ok", "n_ratings": 10}, model_exists=True, n_ratings=10)
+    assert not cf_is_fresh({"status": "ok", "n_ratings": 9}, model_exists=True, n_ratings=10)
+    assert not cf_is_fresh({"status": "ok", "n_ratings": 10}, model_exists=False, n_ratings=10)

@@ -120,12 +120,28 @@ class State:
         }
         self.save()
 
+    def seed(self, finished: dict[str, str]) -> None:
+        """Count steps an earlier bootstrap already did as done.
+
+        ``finished`` maps a step to when its source's last successful ingest
+        finished (from ``ingest_runs``). Only steps this file has no record of
+        are seeded, so the first ``build.py`` on an existing catalog does not
+        start from nothing -- and TMDB's six-month clock starts from the real
+        fetch, not from today.
+        """
+        for name, finished_at in finished.items():
+            if name not in self.steps:
+                self.steps[name] = {"status": "ok", "finished_at": finished_at,
+                                    "seconds": None, "note": "done by an earlier bootstrap"}
+
     def done(self, step: Step, *, now: datetime, tmdb_max_age_days: int) -> bool:
         entry = self.steps.get(step.name)
         if not entry or entry.get("status") != "ok":
             return False
         if step.name in TMDB_STEPS:
             finished = datetime.fromisoformat(entry["finished_at"])
+            if finished.tzinfo is None:
+                finished = finished.replace(tzinfo=UTC)
             if (now - finished).days >= tmdb_max_age_days:
                 return False
         return True
@@ -171,7 +187,28 @@ def set_env_value(env_path: Path, key: str, value: str, example: Path | None = N
         out.append(line)
     if not replaced:
         out.append(f"{key}={value}")
-    env_path.write_text("\n".join(out) + "\n", encoding="utf-8")
+    tmp = env_path.with_name(env_path.name + ".tmp")
+    tmp.write_text("\n".join(out) + "\n", encoding="utf-8")
+    os.replace(tmp, env_path)  # never a half-written .env
+
+
+#: How a kagglehub refusal to download without a login reads in an error.
+_KAGGLE_AUTH_MARKS = ("UnauthenticatedError", "CredentialError", "401", "403", "credential")
+
+
+def kaggle_refused_login(error: str | None) -> bool:
+    """Whether an ingest error is Kaggle asking for a login, and nothing else.
+
+    A missing local file (MAL_CSV_PATH) or a network failure is not; offering a
+    login for those would be answering the wrong question.
+    """
+    return bool(error) and any(mark in (error or "") for mark in _KAGGLE_AUTH_MARKS)
+
+
+def cf_is_fresh(last: dict[str, Any], *, model_exists: bool, n_ratings: int) -> bool:
+    """The collaborative model is current: built, successfully, from these ratings."""
+    return (model_exists and last.get("status") in ("ok", "fresh")
+            and last.get("n_ratings") == n_ratings)
 
 
 def has_kaggle_credentials(env: dict[str, str] | None = None, home: Path | None = None) -> bool:
@@ -268,12 +305,12 @@ class Build:
 
             expected = self.state.estimate(step)
             t0 = time.monotonic()
-            outcome = self.run_step(step)
+            outcome = self._run(step)
             if (outcome.status == "error" and step.needs == "kaggle"
-                    and not self.kaggle_configured() and self.ask_kaggle is not None):
-                self.print("    the Kaggle download was refused without a login.")
+                    and outcome.extra.get("needs_login") and self.ask_kaggle is not None):
+                self.print("    Kaggle refused the download without a login.")
                 if self.ask_kaggle():
-                    outcome = self.run_step(step)
+                    outcome = self._run(step)
             elapsed = time.monotonic() - t0
             self.state.record(step.name, outcome.status, elapsed, outcome.note, **outcome.extra)
             if outcome.status == "ok":
@@ -292,6 +329,14 @@ class Build:
             self.print(f"Skipped: {', '.join(skipped)}. Add TMDB_READ_TOKEN to .env (or run "
                        "again in a terminal to be asked) and run again to include them.")
         return 1 if failures else 0
+
+    def _run(self, step: Step) -> Outcome:
+        """One step, whatever it raises: a failure is recorded, not a crash."""
+        try:
+            return self.run_step(step)
+        except Exception as exc:  # one broken step must not end a long build
+            log.exception("step %s raised", step.name)
+            return Outcome("error", f"{type(exc).__name__}: {exc}")
 
     def _have_tmdb(self, already_declined: bool) -> bool:
         if self.tmdb_configured():

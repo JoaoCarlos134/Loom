@@ -61,6 +61,9 @@ class Settings(BaseSettings):
 
     # MyAnimeList CSV dump (Kaggle). Path empty -> fetched via kagglehub and
     # cached under ~/.cache/kagglehub. target 0 -> ingest the whole file.
+    # A Kaggle API token, for when Kaggle will not hand over the dump without a
+    # login. A secret: .env only. scripts/build.py asks for it when needed.
+    kaggle_api_token: str = ""
     mal_csv_dataset: str = "azathoth42/myanimelist"
     mal_csv_filename: str = "AnimeList.csv"
     mal_csv_path: str = ""

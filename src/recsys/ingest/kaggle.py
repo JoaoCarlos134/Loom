@@ -15,7 +15,7 @@ log = get_logger(__name__)
 
 
 def resolve_kaggle_file(
-    *, dataset: str, filename: str, explicit_path: str, setting_name: str
+    *, dataset: str, filename: str, explicit_path: str, setting_name: str, token: str = ""
 ) -> Path:
     """Return a local path to ``filename``, downloading the dataset if needed.
 
@@ -32,8 +32,15 @@ def resolve_kaggle_file(
 
     # Imported lazily: only these ingesters need kagglehub, and only when they
     # have not been pointed at a local file.
+    import os
+
     import kagglehub
 
+    if token:
+        # kagglehub reads its API token from this variable. The token itself
+        # lives in .env, like every other credential, and is handed over here
+        # rather than kept in kagglehub's own files.
+        os.environ["KAGGLE_API_TOKEN"] = token
     log.info("resolving %s via kagglehub (cached after the first run)", dataset)
     root = Path(kagglehub.dataset_download(dataset))
     path = root / filename
