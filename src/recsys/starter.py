@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import sqlite3
 import zipfile
@@ -66,6 +67,14 @@ ATTRIBUTION = "ATTRIBUTION.md"
 
 #: The only names an archive may contain. Anything else fails the install.
 PACK_FILES = (DB_NAME, EMBEDDINGS, COLLABORATIVE, MANIFEST, ATTRIBUTION)
+
+
+#: Every column of `items` a pack carries -- the catalog's own, raw_json included.
+_ITEM_COLUMNS = (
+    "item_uid", "domain", "source", "source_id", "title", "alt_titles", "year", "creators",
+    "tags", "description", "external_ids", "popularity", "mean_rating", "n_ratings",
+    "image_url", "fetched_at", "raw_json",
+)
 
 
 class StarterError(RuntimeError):
@@ -113,8 +122,17 @@ def _attribution(counts: dict[str, int]) -> str:
         "this archive (catalog rows, derived vectors and neighbours) is shared under the",
         "same licence, CC BY-SA 4.0: https://creativecommons.org/licenses/by-sa/4.0/",
         "",
-        "Open Library: https://openlibrary.org/developers/licensing -- covers are",
-        "linked, not included, and are served by covers.openlibrary.org.",
+        "Open Library: https://openlibrary.org/developers/licensing",
+        "",
+        "Changes made (as CC BY-SA asks): the goodbooks-10k rows are mapped into",
+        "Loom's catalog schema (ratings rescaled from 1-5 to 1-10, shelves filtered,",
+        "Goodreads' 'nophoto' placeholder dropped), linked to Open Library records",
+        "by ISBN, grouped into series from their titles, and turned into text-",
+        "embedding vectors and an item-item neighbour table. Nothing else is added.",
+        "",
+        "Images are not included, only links: book covers are served by",
+        "covers.openlibrary.org and by Goodreads' image server",
+        "(images.gr-assets.com), under their own terms.",
         "",
     ]
     return "\n".join(lines)
@@ -157,13 +175,17 @@ def build_pack(
                        (Path(source_db).resolve().as_uri() + "?mode=ro",))
         pairs = " OR ".join("(domain = ? AND source = ?)" for _ in SHIPPABLE)
         spaces = " OR ".join("user_uid LIKE ?" for _ in SHIPPABLE_RATINGS)
+        # Columns named, not `*`: a source built by another Loom version may
+        # order or extend them differently.
+        cols = ", ".join(_ITEM_COLUMNS)
         with copier:
             copier.execute(
-                f"INSERT INTO items SELECT * FROM src.items WHERE {pairs}",
+                f"INSERT INTO items ({cols}) SELECT {cols} FROM src.items WHERE {pairs}",
                 [v for pair in SHIPPABLE for v in pair],
             )
             copier.execute(
-                f"INSERT INTO ratings SELECT * FROM src.ratings WHERE {spaces}",
+                "INSERT INTO ratings (user_uid, item_uid, rating, rated_at) "
+                f"SELECT user_uid, item_uid, rating, rated_at FROM src.ratings WHERE {spaces}",
                 [f"{ns}:%" for ns in SHIPPABLE_RATINGS],
             )
         copier.execute("DETACH DATABASE src")
@@ -314,39 +336,141 @@ def _expected_digest(location: str, pinned: str, transport: Any = None) -> str:
     return str(resp.text).split()[0].lower()
 
 
+def _ro_uri(db_path: Path) -> str:
+    """A read-only URI for any path. ``as_uri`` percent-encodes ``#`` and ``%``,
+    which a hand-built ``file:`` URI would read as a fragment or an escape and
+    so open a different file than the one meant."""
+    return Path(db_path).resolve().as_uri() + "?mode=ro"
+
+
 def _has_your_ratings(db_path: Path) -> bool:
+    """Whether ``db_path`` holds a rating of yours. Fails *closed*.
+
+    Anything but a clear "no" -- an unreadable file, a locked one, a database
+    with no ratings table yet only because it is not a Loom one -- counts as
+    "yes", except that last case, which is checked for explicitly. Losing your
+    ratings to a guard that could not read them is the one outcome this must
+    never allow.
+    """
     from recsys.schemas import LOCAL_USER_UID
 
-    if not db_path.is_file():
+    if not db_path.exists():
         return False
-    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
-        row = conn.execute(
-            "SELECT 1 FROM ratings WHERE user_uid = ? LIMIT 1", (LOCAL_USER_UID,)
-        ).fetchone()
-    except sqlite3.OperationalError:  # no ratings table: not a Loom database yet
-        row = None
-    finally:
-        conn.close()
+        conn = sqlite3.connect(_ro_uri(db_path), uri=True)
+        try:
+            tables = {r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'")}
+            if "ratings" not in tables:
+                return False
+            row = conn.execute(
+                "SELECT 1 FROM ratings WHERE user_uid = ? LIMIT 1", (LOCAL_USER_UID,)
+            ).fetchone()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return True
     return row is not None
 
 
 def _has_catalog(db_path: Path) -> bool:
-    if not db_path.is_file():
+    if not db_path.exists():
         return False
-    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
-        return conn.execute("SELECT 1 FROM items LIMIT 1").fetchone() is not None
-    except sqlite3.OperationalError:
-        return False
-    finally:
-        conn.close()
+        conn = sqlite3.connect(_ro_uri(db_path), uri=True)
+        try:
+            return conn.execute("SELECT 1 FROM items LIMIT 1").fetchone() is not None
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return True  # unreadable: treat as a catalog, so only --force replaces it
+
+
+def _refuse_if_yours(db_path: Path) -> None:
+    if _has_your_ratings(db_path):
+        raise StarterError(
+            f"{db_path} holds your own ratings (or could not be read to check); the "
+            "starter pack will not replace it. Move it aside, or point DATA_DIR "
+            "elsewhere, and run this again."
+        )
+
+
+#: What an install replaces in ``data_dir`` -- the pack's own files, plus what
+#: describes the catalog they replace: the database's sidecars and the full
+#: build's record of what it did, which would otherwise claim the old build's
+#: steps are done.
+_REPLACED = (DB_NAME, f"{DB_NAME}-wal", f"{DB_NAME}-shm", "features", "build-state.json",
+             ATTRIBUTION, MANIFEST)
+
+#: Members above this are refused before anything is extracted. The pack is
+#: tens of megabytes; this is a ceiling on what a zip bomb could unpack.
+MAX_MEMBER_BYTES = 4 * 1024**3
+
+
+def _unpack(archive: Path, stage: Path) -> dict[str, Any]:
+    """Extract and verify. Every member must be a known pack file, named in the
+    manifest with its size and checksum; sizes are checked before extracting."""
+    with zipfile.ZipFile(archive) as zf:
+        infos = {i.filename: i for i in zf.infolist()}
+        unexpected = [n for n in infos if n not in PACK_FILES]
+        if unexpected or MANIFEST not in infos or DB_NAME not in infos:
+            raise StarterError(f"not a Loom starter pack (unexpected: {unexpected[:3]})")
+        manifest: dict[str, Any] = json.loads(zf.read(MANIFEST).decode("utf-8"))
+        files = manifest.get("files", {})
+        if set(files) != set(infos) - {MANIFEST}:
+            raise StarterError("the pack's manifest does not account for exactly its files")
+        for name, meta in files.items():
+            size = infos[name].file_size
+            if size > MAX_MEMBER_BYTES or size != meta.get("bytes"):
+                raise StarterError(f"{name} is not the size the pack's manifest states")
+        for name in infos:
+            target = stage / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(name) as src, target.open("wb") as dst:
+                shutil.copyfileobj(src, dst)
+    for name, meta in files.items():
+        if sha256_of(stage / name) != meta.get("sha256"):
+            raise StarterError(f"{name} does not match the pack's manifest")
+    return manifest
+
+
+def _swap_in(stage: Path, data_dir: Path, names: list[str]) -> Path:
+    """Move the old set aside, the new one in; put the old one back on any error.
+
+    Returns the backup directory, which holds whatever the install replaced.
+    """
+    backup = data_dir / f".starter-replaced-{datetime.now(UTC):%Y%m%dT%H%M%S}"
+    moved: list[str] = []
+    placed: list[str] = []
+    try:
+        for name in _REPLACED:
+            if (data_dir / name).exists():
+                (backup / name).parent.mkdir(parents=True, exist_ok=True)
+                os.replace(data_dir / name, backup / name)
+                moved.append(name)
+        for name in names:
+            dest = data_dir / name
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(stage / name, dest)
+            placed.append(name)
+    except OSError as exc:
+        for name in placed:
+            (data_dir / name).unlink(missing_ok=True)
+        for name in moved:
+            os.replace(backup / name, data_dir / name)
+        raise StarterError(
+            f"could not put the pack in place ({exc}); nothing was changed. Close Loom if "
+            "it is running and try again."
+        ) from exc
+    return backup
 
 
 @dataclass
 class InstallResult:
     manifest: dict[str, Any]
     replaced_catalog: bool = False
+    #: Where the replaced catalog went (with --force); delete it once unneeded.
+    backup: Path | None = None
 
 
 def install_pack(
@@ -366,11 +490,7 @@ def install_pack(
     """
     data_dir = Path(data_dir)
     db_path = data_dir / DB_NAME
-    if _has_your_ratings(db_path):
-        raise StarterError(
-            f"{db_path} holds your own ratings; the starter pack will not replace it. "
-            "Move it aside (or point DATA_DIR elsewhere) and run this again."
-        )
+    _refuse_if_yours(db_path)
     replaced = _has_catalog(db_path)
     if replaced and not force:
         raise StarterError(
@@ -389,30 +509,15 @@ def install_pack(
         shutil.rmtree(stage)
     stage.mkdir(parents=True)
     try:
-        with zipfile.ZipFile(archive) as zf:
-            names = zf.namelist()
-            unexpected = [n for n in names if n not in PACK_FILES]
-            if unexpected or MANIFEST not in names or DB_NAME not in names:
-                raise StarterError(f"not a Loom starter pack (unexpected: {unexpected[:3]})")
-            for name in names:
-                target = stage / name
-                target.parent.mkdir(parents=True, exist_ok=True)
-                with zf.open(name) as src, target.open("wb") as dst:
-                    shutil.copyfileobj(src, dst)
-        manifest = json.loads((stage / MANIFEST).read_text(encoding="utf-8"))
-        for name, meta in manifest.get("files", {}).items():
-            if name not in PACK_FILES or not (stage / name).is_file():
-                raise StarterError(f"the manifest names {name!r}, which the archive lacks")
-            if sha256_of(stage / name) != meta.get("sha256"):
-                raise StarterError(f"{name} does not match the pack's manifest")
-
-        for sidecar in ("", "-wal", "-shm"):
-            Path(f"{db_path}{sidecar}").unlink(missing_ok=True)
-        for name in names:
-            dest = data_dir / name
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            (stage / name).replace(dest)
+        manifest = _unpack(archive, stage)
+        # Checked again: the download can take minutes, and Loom may have been
+        # open and taken a rating meanwhile.
+        _refuse_if_yours(db_path)
+        backup = _swap_in(stage, data_dir, [n for n in PACK_FILES if (stage / n).is_file()])
     finally:
         shutil.rmtree(stage, ignore_errors=True)
+    if not replaced:
+        shutil.rmtree(backup, ignore_errors=True)  # it held nothing of a catalog
     log.info("starter pack %s installed into %s", manifest.get("pack"), data_dir)
-    return InstallResult(manifest=manifest, replaced_catalog=replaced)
+    return InstallResult(manifest=manifest, replaced_catalog=replaced,
+                         backup=backup if replaced else None)

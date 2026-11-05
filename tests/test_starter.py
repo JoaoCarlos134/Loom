@@ -261,3 +261,138 @@ def test_bootstrap_installs_the_pack_from_the_command_line(pack, capsys):
     out = capsys.readouterr().out
     assert "installed pack test" in out and "CC BY-SA 4.0" in out
     assert bootstrap.main(["--starter", str(pack.archive)]) == 1  # a catalog exists now
+
+
+# ---- review: failing closed, atomicity, a strict manifest -------------------
+
+
+def with_your_rating(data: Path) -> Path:
+    init_db(data / "recsys.db")
+    conn = connect(data / "recsys.db")
+    upsert_items(conn, [row("book", "goodbooks", 9, "Mine")])
+    set_rating(conn, "book:goodbooks:9", 7)
+    conn.close()
+    return data / "recsys.db"
+
+
+def test_ratings_under_a_path_with_a_hash_are_still_seen(pack, tmp_path):
+    """A hand-built file: URI read "#" as a fragment, opened another file, and
+    reported no ratings -- and the install replaced them."""
+    db = with_your_rating(tmp_path / "C#user" / "Lo%20om")
+    with pytest.raises(StarterError, match="your own ratings"):
+        install_pack(str(pack.archive), db.parent, force=True)
+    conn = connect(db)
+    assert conn.execute("SELECT COUNT(*) FROM ratings").fetchone()[0] == 1
+    conn.close()
+
+
+def test_a_database_that_cannot_be_read_is_never_replaced(pack, tmp_path):
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "recsys.db").write_bytes(b"not a database at all, but maybe yours")
+    with pytest.raises(StarterError, match="could not be read"):
+        install_pack(str(pack.archive), data, force=True)
+    assert (data / "recsys.db").read_bytes().startswith(b"not a database")
+
+
+def test_a_rating_made_during_the_download_stops_the_install(pack, tmp_path, monkeypatch):
+    import recsys.starter as starter
+
+    data = tmp_path / "data"
+    init_db(data / "recsys.db")
+    real_fetch = starter._fetch
+
+    def fetch_while_you_rate(location, dest, transport=None):
+        conn = connect(data / "recsys.db")
+        upsert_items(conn, [row("book", "goodbooks", 9, "Rated meanwhile")])
+        set_rating(conn, "book:goodbooks:9", 9)
+        conn.close()
+        return real_fetch(location, dest, transport)
+
+    monkeypatch.setattr(starter, "_fetch", fetch_while_you_rate)
+    with pytest.raises(StarterError, match="your own ratings"):
+        install_pack(str(pack.archive), data, force=True)
+    conn = connect(data / "recsys.db")
+    assert conn.execute("SELECT COUNT(*) FROM ratings").fetchone()[0] == 1
+    conn.close()
+
+
+def old_build(data: Path) -> None:
+    init_db(data / "recsys.db")
+    conn = connect(data / "recsys.db")
+    upsert_items(conn, [row("anime", "anilist", 1, "Old catalog")])
+    conn.close()
+    (data / "features").mkdir(parents=True, exist_ok=True)
+    (data / "features" / "embeddings.parquet").write_bytes(b"old 84k matrix")
+    (data / "features" / "collaborative.parquet").write_bytes(b"old cf")
+    (data / "build-state.json").write_text('{"steps": {}}', encoding="utf-8")
+
+
+def test_a_failed_swap_puts_everything_back(pack, tmp_path, monkeypatch):
+    import recsys.starter as starter
+
+    data = tmp_path / "data"
+    old_build(data)
+    real_replace = starter.os.replace
+    calls = {"n": 0}
+
+    def flaky(src, dst):
+        calls["n"] += 1
+        if str(src).endswith("embeddings.parquet") and ".starter-unpack" in str(src):
+            raise PermissionError("locked by another process")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(starter.os, "replace", flaky)
+    with pytest.raises(StarterError, match="nothing was changed"):
+        install_pack(str(pack.archive), data, force=True)
+    assert (data / "features" / "embeddings.parquet").read_bytes() == b"old 84k matrix"
+    assert (data / "build-state.json").is_file()
+    conn = connect(data / "recsys.db")
+    assert conn.execute("SELECT title FROM items").fetchone()[0] == "Old catalog"
+    conn.close()
+
+
+def test_force_leaves_nothing_of_the_old_build_behind(pack, tmp_path):
+    """An old matrix the pack lacks, or the full build's record of steps done,
+    would describe a catalog that is no longer there."""
+    data = tmp_path / "data"
+    old_build(data)
+    (data / "features" / "embeddings.parquet").unlink()  # pack has one; test the other
+    (data / "recsys.db-wal").write_bytes(b"stale")
+    result = install_pack(str(pack.archive), data, force=True)
+    assert not (data / "build-state.json").exists()
+    assert not (data / "recsys.db-wal").exists() or (data / "recsys.db-wal").read_bytes() != b"stale"
+    assert (data / "features" / "collaborative.parquet").read_bytes() != b"old cf"
+    assert result.backup is not None and (result.backup / "build-state.json").is_file()
+
+
+def test_a_manifest_that_leaves_a_file_out_is_refused(pack, tmp_path):
+    with zipfile.ZipFile(pack.archive) as zf:
+        manifest = json.loads(zf.read("MANIFEST.json"))
+    del manifest["files"]["ATTRIBUTION.md"]
+    archive, digest = tampered(pack, tmp_path, {"MANIFEST.json": json.dumps(manifest).encode()})
+    with pytest.raises(StarterError, match="account for exactly"):
+        install_pack(str(archive), tmp_path / "data", sha256=digest)
+
+
+def test_a_member_of_the_wrong_size_is_refused_before_extracting(pack, tmp_path):
+    with zipfile.ZipFile(pack.archive) as zf:
+        manifest = json.loads(zf.read("MANIFEST.json"))
+    manifest["files"]["ATTRIBUTION.md"]["bytes"] += 1
+    archive, digest = tampered(pack, tmp_path, {"MANIFEST.json": json.dumps(manifest).encode()})
+    with pytest.raises(StarterError, match="size"):
+        install_pack(str(archive), tmp_path / "data", sha256=digest)
+
+
+def test_the_ratings_used_for_the_model_leave_no_trace_in_the_pack(pack, tmp_path):
+    """Deleted and VACUUMed: not a row, not a free page, not a byte."""
+    raw = (unpacked(pack, tmp_path) / "recsys.db").read_bytes()
+    assert b"goodbooks:5" not in raw
+    assert b"mal:someone" not in raw
+    assert b"local:you" not in raw
+
+
+def test_the_attribution_says_what_was_changed_and_where_covers_come_from(pack, tmp_path):
+    text = (unpacked(pack, tmp_path) / "ATTRIBUTION.md").read_text(encoding="utf-8")
+    assert "Changes made" in text
+    assert "images.gr-assets.com" in text and "covers.openlibrary.org" in text

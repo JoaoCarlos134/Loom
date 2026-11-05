@@ -1,6 +1,6 @@
 """Build the starter pack from a catalog. The maintainer's side of --starter.
 
-    uv run python scripts/starter.py --version v1 --out dist/
+    uv run python scripts/starter.py --version v1          # into DATA_DIR/dist
 
 Reads DATA_DIR (or --data-dir) and never writes to it: the shippable rows,
 the vectors for their works and a collaborative model trained on the
@@ -33,8 +33,9 @@ from recsys.starter import SHIPPABLE, build_pack
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build the Loom starter pack")
     parser.add_argument("--version", required=True, help="pack version, e.g. v1")
-    parser.add_argument("--out", type=Path, default=ROOT / "dist",
-                        help="where the archive is written (default: dist/)")
+    parser.add_argument("--out", type=Path, default=None,
+                        help="where the archive is written (default: DATA_DIR/dist -- "
+                             "never inside the repository)")
     parser.add_argument("--data-dir", type=Path, default=None,
                         help="the catalog to build from (default: DATA_DIR)")
     parser.add_argument("--no-embeddings", action="store_true",
@@ -44,6 +45,7 @@ def main(argv: list[str] | None = None) -> int:
 
     setup_logging()
     data_dir = args.data_dir or get_settings().data_dir
+    out = args.out or get_settings().data_dir / "dist"
     source = data_dir / "recsys.db"
     matrix = data_dir / "features" / "embeddings.parquet"
     if not source.is_file():
@@ -52,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.no_embeddings and not matrix.is_file():
         print(f"no embedding matrix at {matrix}; run scripts/embed.py or pass --no-embeddings")
         return 1
-    args.out.mkdir(parents=True, exist_ok=True)
+    out.mkdir(parents=True, exist_ok=True)
 
     print("Building the starter pack from", source)
     for (domain, src), terms in SHIPPABLE.items():
@@ -60,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
     result = build_pack(
         source,
         embeddings=None if args.no_embeddings else matrix,
-        out_dir=args.out,
+        out_dir=out,
         version=args.version,
         rebuild_derived=rebuild_derived,
         build_collaborative=lambda conn, out: build_collaborative(conn, out_path=out),
