@@ -239,7 +239,7 @@ def test_without_the_read_view_search_still_uses_calibrated_popularity(tmp_path)
         c.execute("UPDATE popularity_norm SET value = 10 WHERE item_uid = 'anime:anilist:1'")
         c.execute("UPDATE popularity_norm SET value = 5000 WHERE item_uid = 'anime:other:2'")
         c.execute("DELETE FROM works")
-    assert [i.item_uid for i in query_items(c, q="Monster")[1]][0] == "anime:other:2"
+    assert next(i.item_uid for i in query_items(c, q="Monster")[1]) == "anime:other:2"
     c.close()
 
 

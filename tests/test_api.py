@@ -75,7 +75,9 @@ def test_items_returns_everything_by_default(client):
 
 
 def test_items_ordered_by_popularity(client):
-    items = client.get("/api/items").json()["items"]
+    """Within a domain. Across all of them there is no one scale, and the
+    listing interleaves the domains instead (tests/test_browse_default.py)."""
+    items = client.get("/api/items", params={"domain": "anime"}).json()["items"]
     pops = [i["popularity"] for i in items]
     assert pops == sorted(pops, reverse=True)
 
@@ -232,3 +234,32 @@ def test_the_domain_filter_offers_every_domain():
     html = (UI_DIR / "index.html").read_text(encoding="utf-8")
     missing = [d for d in DOMAINS if f'<option value="{d}">' not in html]
     assert not missing, f"index.html has no filter option for {missing}"
+
+
+def test_an_upgrade_that_empties_the_read_view_is_refilled_at_startup():
+    """Migrations recreate `works` empty. Left alone, the app would serve the
+    slow fallback -- no series cards, no covers-first order -- until someone
+    thought to run bootstrap."""
+    from recsys.config import get_settings
+    from recsys.db import connect, init_db, upsert_items
+    from recsys.derive import rebuild_derived
+    from recsys.schemas import UnifiedItem
+
+    settings = get_settings()
+    settings.ensure_dirs()
+    init_db(settings.db_path)
+    conn = connect(settings.db_path)
+    upsert_items(conn, [UnifiedItem(domain="book", source="goodbooks", source_id="1",
+                                    title="Dark Matter", popularity=5.0)])
+    rebuild_derived(conn)
+    with conn:
+        conn.execute("DELETE FROM works")  # what a migration that recreates it leaves
+    conn.close()
+
+    from recsys.api.server import create_app
+
+    with TestClient(create_app()):
+        pass
+    conn = connect(settings.db_path)
+    assert conn.execute("SELECT COUNT(*) FROM works").fetchone()[0] == 1
+    conn.close()

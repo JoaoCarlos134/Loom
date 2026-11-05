@@ -61,6 +61,11 @@ DOMAIN = "music"
 #: Seconds to wait at minimum when a service asks us to slow down.
 SLOWDOWN_FLOOR = 2.0
 
+#: Deezer's "quota exceeded" (4) and "service busy" (700) error codes, which it
+#: returns inside an HTTP 200. Its quota is counted over five seconds.
+DEEZER_RETRY_CODES = frozenset({4, 700})
+DEEZER_QUOTA_PAUSE = 5.0
+
 #: Crew jobs and staff roles that mean "wrote the music".
 COMPOSER_PATTERNS = ("%Composer%", "%Music%", "%Theme Song%")
 
@@ -237,7 +242,8 @@ class MusicBrainzIngester(Ingester):
             await self._client.aclose()
             self._client = None
 
-    async def _get_json(self, url: str, params: dict[str, Any], *, limited: bool) -> Any:
+    async def _get_json(self, url: str, params: dict[str, Any], *, deezer: bool = False) -> Any:
+        """One GET, cached, paced by the limiter of the service it goes to."""
         cached = self.cache.get(f"{url}?{sorted(params.items())}")
         if cached is not None:
             self.n_cached += 1
@@ -246,7 +252,7 @@ class MusicBrainzIngester(Ingester):
         client = self._get_client()
         last_error = "unknown"
         for attempt in range(self.max_retries):
-            await (self.limiter if limited else self.deezer_limiter).acquire()
+            await (self.deezer_limiter if deezer else self.limiter).acquire()
             try:
                 resp = await client.get(url, params=params)
             except httpx.HTTPError as exc:
@@ -256,6 +262,17 @@ class MusicBrainzIngester(Ingester):
 
             if resp.status_code == 200:
                 payload = resp.json()
+                # Deezer reports trouble as a 200 with an "error" body: code 4
+                # is over quota, 700 is busy. Neither is an answer -- cached, it
+                # would read as "no such artist" for the cache's whole lifetime.
+                error = payload.get("error") if isinstance(payload, dict) else None
+                if error:
+                    code = error.get("code") if isinstance(error, dict) else None
+                    last_error = f"Deezer error {code}"
+                    if code in DEEZER_RETRY_CODES:
+                        await asyncio.sleep(DEEZER_QUOTA_PAUSE + backoff_delay(attempt))
+                        continue
+                    return None  # an answer about this query, but not one to keep
                 self.cache.set(f"{url}?{sorted(params.items())}", payload)
                 return payload
 
@@ -288,7 +305,6 @@ class MusicBrainzIngester(Ingester):
         payload = await self._get_json(
             f"{self.url}/artist/",
             {"query": f'artist:"{name}"', "fmt": "json", "limit": 3},
-            limited=True,
         )
         for candidate in (payload or {}).get("artists") or []:
             if not isinstance(candidate, dict):
@@ -310,7 +326,7 @@ class MusicBrainzIngester(Ingester):
         """
         try:
             payload = await self._get_json(
-                f"{self.deezer_url}/search/artist", {"q": name, "limit": 1}, limited=False
+                f"{self.deezer_url}/search/artist", {"q": name, "limit": 1}, deezer=True
             )
         except Exception as exc:
             log.debug("deezer lookup failed for %r: %s", name, exc)

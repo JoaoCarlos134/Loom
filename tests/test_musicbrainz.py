@@ -211,7 +211,7 @@ def test_names_compare_after_normalisation(a, b):
 
 
 async def test_a_low_scoring_match_is_rejected(settings, seeded, monkeypatch):
-    async def fake(self, url, params, *, limited):
+    async def fake(self, url, params, *, deezer=False):
         return {"artists": [{"id": "x", "name": "Hans Zimmer", "score": 50}]}
 
     monkeypatch.setattr(MusicBrainzIngester, "_get_json", fake)
@@ -223,7 +223,7 @@ async def test_a_low_scoring_match_is_rejected(settings, seeded, monkeypatch):
 async def test_a_differently_named_match_is_rejected(settings, seeded, monkeypatch):
     """The guard that matters: "John Williams" is several unrelated people, and
     a confident wrong match would teach the bridge something false."""
-    async def fake(self, url, params, *, limited):
+    async def fake(self, url, params, *, deezer=False):
         return {"artists": [{"id": "x", "name": "John Williams & Friends", "score": 100}]}
 
     monkeypatch.setattr(MusicBrainzIngester, "_get_json", fake)
@@ -233,7 +233,7 @@ async def test_a_differently_named_match_is_rejected(settings, seeded, monkeypat
 
 
 async def test_an_exact_high_scoring_match_is_accepted(settings, seeded, monkeypatch):
-    async def fake(self, url, params, *, limited):
+    async def fake(self, url, params, *, deezer=False):
         if "deezer" in url:
             return {"data": [{"name": "Hans Zimmer", "nb_fan": 12345, "id": 7}]}
         return {"artists": [{"id": "mbid-1", "name": "Hans Zimmer", "score": 100,
@@ -258,7 +258,7 @@ async def test_one_unresolvable_artist_does_not_end_the_run(settings, seeded, mo
     several thousand names will meet that."""
     calls = {"n": 0}
 
-    async def fake(self, url, params, *, limited):
+    async def fake(self, url, params, *, deezer=False):
         if "deezer" in url:
             return {"data": []}
         calls["n"] += 1
@@ -338,7 +338,7 @@ def test_deezers_placeholder_is_no_image(url):
 async def test_the_picture_comes_from_the_answer_already_fetched(settings, seeded, monkeypatch):
     calls = []
 
-    async def fake(self, url, params, *, limited):
+    async def fake(self, url, params, *, deezer=False):
         calls.append(url)
         if "deezer" in url:
             return {"data": [{"name": "Hans Zimmer", "nb_fan": 12345, "id": 7,
@@ -356,9 +356,68 @@ async def test_the_picture_comes_from_the_answer_already_fetched(settings, seede
     assert len(calls) == 2  # one MusicBrainz search, one Deezer search; no extra request
 
 
-def test_deezer_is_held_under_its_documented_limit(settings):
-    """Deezer allows 50 requests per 5 seconds per IP. Once MusicBrainz answers
-    come from the cache, nothing else paces the Deezer calls."""
-    ingester = MusicBrainzIngester(settings)
+class Recorder:
+    """A limiter that remembers it was asked, and never waits."""
+
+    def __init__(self, name, log):
+        self.name, self.log = name, log
+
+    async def acquire(self):
+        self.log.append(self.name)
+
+
+def transport_for(handler):
+    import httpx
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+
+async def test_each_service_is_paced_by_its_own_limiter(settings):
+    """MusicBrainz at under one a second, Deezer at its own 50 per 5 s. Swapping
+    them would run MusicBrainz at eight a second, which gets a client blocked."""
+    import httpx
+
     assert settings.deezer_rate_per_sec * 5 < 50
-    assert ingester.deezer_limiter is not None
+    ingester = MusicBrainzIngester(settings)
+    acquired: list[str] = []
+    ingester.limiter = Recorder("musicbrainz", acquired)
+    ingester.deezer_limiter = Recorder("deezer", acquired)
+    ingester._client = transport_for(lambda request: httpx.Response(200, json={"data": []}))
+    await ingester._get_json(f"{ingester.url}/artist/", {"query": "x"})
+    await ingester._get_json(f"{ingester.deezer_url}/search/artist", {"q": "x"}, deezer=True)
+    await ingester.aclose()
+    assert acquired == ["musicbrainz", "deezer"]
+
+
+async def test_a_deezer_quota_error_is_retried_and_never_cached(settings, monkeypatch):
+    """Deezer answers HTTP 200 with {"error": {"code": 4}} when over quota.
+    Cached, that would read as "no such artist" -- no picture, no fans -- for
+    the cache's whole lifetime."""
+    import httpx
+
+    import recsys.ingest.music_musicbrainz as mb
+
+    monkeypatch.setattr(mb, "DEEZER_QUOTA_PAUSE", 0.0)
+    answers = [{"error": {"type": "Exception", "message": "Quota limit exceeded", "code": 4}},
+               {"data": [{"name": "Hans Zimmer", "nb_fan": 7, "id": 1}]}]
+    ingester = MusicBrainzIngester(settings)
+    ingester.deezer_limiter = Recorder("deezer", [])
+    ingester._client = transport_for(lambda request: httpx.Response(200, json=answers.pop(0)))
+    url, params = f"{ingester.deezer_url}/search/artist", {"q": "Hans Zimmer", "limit": 1}
+    payload = await ingester._get_json(url, params, deezer=True)
+    await ingester.aclose()
+    assert payload["data"][0]["nb_fan"] == 7
+    assert ingester.cache.get(f"{url}?{sorted(params.items())}") == payload
+
+
+async def test_another_deezer_error_is_no_answer_and_is_not_kept(settings):
+    import httpx
+
+    ingester = MusicBrainzIngester(settings)
+    ingester.deezer_limiter = Recorder("deezer", [])
+    ingester._client = transport_for(
+        lambda request: httpx.Response(200, json={"error": {"code": 800}}))
+    url, params = f"{ingester.deezer_url}/search/artist", {"q": "Nobody"}
+    assert await ingester._get_json(url, params, deezer=True) is None
+    await ingester.aclose()
+    assert ingester.cache.get(f"{url}?{sorted(params.items())}") is None

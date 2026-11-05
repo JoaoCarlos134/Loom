@@ -277,13 +277,13 @@ def test_registry_exposes_the_ingester(settings):
 
 def test_the_editions_cover_is_the_books_image():
     item = map_openlibrary(work(_edition_covers=[8231856], covers=[111]))
-    assert item.image_url == "https://covers.openlibrary.org/b/id/8231856-M.jpg"
+    assert item.image_url == "https://covers.openlibrary.org/b/id/8231856-M.jpg?default=false"
 
 
 def test_the_works_cover_is_the_fallback():
     """-1 is how Open Library marks a deleted cover."""
     item = map_openlibrary(work(_edition_covers=[], covers=[-1, 678]))
-    assert item.image_url == "https://covers.openlibrary.org/b/id/678-M.jpg"
+    assert item.image_url == "https://covers.openlibrary.org/b/id/678-M.jpg?default=false"
 
 
 @pytest.mark.parametrize("covers", [None, [], [-1], ["x"], [0]])
@@ -296,7 +296,7 @@ def test_a_record_with_only_a_cover_is_kept_to_lend_it():
     lack. It loses the primary election and lends the cover through
     fill_from_siblings."""
     item = map_openlibrary(work(description=None, subjects=[], _edition_covers=[5]))
-    assert item is not None and item.image_url.endswith("/5-M.jpg")
+    assert item is not None and "/b/id/5-M.jpg" in item.image_url
 
 
 def test_a_cover_reaches_a_book_whose_goodreads_cover_was_a_placeholder(conn):
@@ -308,7 +308,7 @@ def test_a_cover_reaches_a_book_whose_goodreads_cover_was_a_placeholder(conn):
     ])
     rebuild_links(conn)
     item = get_item(conn, "book:goodbooks:2767052")
-    assert item.image_url == "https://covers.openlibrary.org/b/id/5-M.jpg"
+    assert item.image_url == "https://covers.openlibrary.org/b/id/5-M.jpg?default=false"
 
 
 async def test_the_batch_call_carries_the_editions_cover_ids(seeded, settings, monkeypatch):
@@ -328,4 +328,30 @@ async def test_the_batch_call_carries_the_editions_cover_ids(seeded, settings, m
     ingester = OpenLibraryIngester(settings)
     records = [r async for r in ingester.fetch()]
     assert records[0]["_edition_covers"] == [8231856]
-    assert ingester.map_item(records[0]).image_url.endswith("/8231856-M.jpg")
+    assert "/b/id/8231856-M.jpg" in ingester.map_item(records[0]).image_url
+
+
+
+@pytest.mark.parametrize("work_answer", ["missing", "unreachable", "no works key"])
+async def test_an_editions_cover_survives_a_work_that_cannot_be_read(
+    seeded, settings, monkeypatch, work_answer
+):
+    from recsys.db import upsert_items
+
+    async def fake(self, path, params=None):
+        if path == "/api/books":
+            details = {"title": "The Hunger Games", "covers": [8231856]}
+            if work_answer != "no works key":
+                details["works"] = [{"key": "/works/OL5735363W"}]
+            return {"ISBN:0439023483": {"details": details}}
+        if work_answer == "unreachable":
+            raise RuntimeError("Open Library failed after 6 attempts")
+        return None  # a 404
+
+    monkeypatch.setattr(OpenLibraryIngester, "_get_json", fake)
+    upsert_items(seeded, [goodbooks_row()])
+    ingester = OpenLibraryIngester(settings)
+    records = [r async for r in ingester.fetch()]
+    assert len(records) == 1
+    item = ingester.map_item(records[0])
+    assert item is not None and "/b/id/8231856-M.jpg" in item.image_url

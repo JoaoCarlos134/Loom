@@ -72,7 +72,9 @@ _SUBJECT_NOISE = (
 #: so a browser showing a page of forty books must never be sent to the ISBN
 #: form. The id is what an ISBN lookup resolves to on their side, and the batch
 #: call this ingester already makes returns it for the edition.
-COVER_URL = "https://covers.openlibrary.org/b/id/{}-M.jpg"
+#: ``?default=false`` makes a missing cover a 404 rather than a blank image, so
+#: the card shows "no image" instead of an empty frame.
+COVER_URL = "https://covers.openlibrary.org/b/id/{}-M.jpg?default=false"
 
 #: Machine-generated headings: a lowercase namespace, a colon, no space.
 #: Open Library carries a lot of these -- ``series:harry_potter``,
@@ -314,25 +316,40 @@ class OpenLibraryIngester(Ingester):
             for bibkey, entry in payload.items():
                 isbn = bibkey.split(":", 1)[-1]
                 details = (entry or {}).get("details") or {}
+                if not details:
+                    continue
+                extra[isbn] = {
+                    "title": details.get("title"),
+                    "_authors": details.get("authors"),
+                    # The edition's cover ids, already in this answer.
+                    "_edition_covers": details.get("covers") or [],
+                }
                 works = details.get("works") or []
                 if works and isinstance(works[0], dict) and works[0].get("key"):
                     work_of[isbn] = works[0]["key"]
-                    extra[isbn] = {
-                        "title": details.get("title"),
-                        "_authors": details.get("authors"),
-                        # The edition's cover ids, already in this answer.
-                        "_edition_covers": details.get("covers") or [],
-                    }
 
         log.info("%s: %d of %d ISBNs resolved to a work", self.name, len(work_of), len(isbns))
+
+        # An edition with no work record, or whose work cannot be fetched,
+        # still has its cover: yield what the batch answer already holds.
+        for isbn in extra.keys() - work_of.keys():
+            if extra[isbn]["_edition_covers"]:
+                yield {**extra[isbn], "_isbn": isbn}
 
         # Phase two: the work itself, which is where the description lives.
         done = 0
         for isbn, key in work_of.items():
-            work = await self._get_json(f"{key}.json")
+            try:
+                work = await self._get_json(f"{key}.json")
+            except RuntimeError as exc:  # one unreachable work must not end the run
+                log.warning("%s: %s", self.name, exc)
+                work = None
             done += 1
             if not isinstance(work, dict):
-                self.n_skipped += 1
+                if extra.get(isbn, {}).get("_edition_covers"):
+                    yield {**extra[isbn], "_isbn": isbn}
+                else:
+                    self.n_skipped += 1
                 continue
             record = {**work, **extra.get(isbn, {}), "_isbn": isbn}
             # The work's title is the canonical one; fall back to the edition's.

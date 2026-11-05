@@ -99,7 +99,8 @@ def test_a_cover_lent_by_a_sibling_counts(tmp_path):
         UnifiedItem(domain="book", source="goodbooks", source_id="1", title="Lent",
                     popularity=5.0, image_url="https://img.example/lent.jpg",
                     external_ids={"isbn": "1"}),
-        UnifiedItem(domain="music", source="src", source_id="9", title="Loud",
+        # "anime" sorts before "book", so only the lent cover can put Lent first.
+        UnifiedItem(domain="anime", source="src", source_id="9", title="Loud",
                     popularity=9e9),
     ])
     rebuild_links(c)
@@ -107,6 +108,9 @@ def test_a_cover_lent_by_a_sibling_counts(tmp_path):
     rebuild_relations(c)
     rebuild_works(c)
     assert [i.title for i in query_items(c)[1]] == ["Lent", "Loud"]
+    assert c.execute(
+        "SELECT has_image FROM works WHERE item_uid = 'book:openlibrary:1'"
+    ).fetchone()[0] == 1
     c.close()
 
 
