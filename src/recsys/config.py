@@ -168,6 +168,17 @@ class Settings(BaseSettings):
     mal_ratings_path: str = ""
     mal_ratings_target_count: int = 0
 
+    # --- starter pack ---
+    # The catalog built from shippable sources only, as a GitHub Release asset.
+    # `bootstrap.py --starter` downloads it, checks it against STARTER_SHA256
+    # when that is set (pinned with each release; the stronger check) or else
+    # against the .sha256 published beside it, and installs it into DATA_DIR.
+    starter_url: str = (
+        "https://github.com/JoaoCarlos134/Loom/releases/download/"
+        "starter-v1/loom-starter-v1.zip"
+    )
+    starter_sha256: str = ""
+
     # --- read view ---
     # A group -- the works one story spans, joined by adaptation, franchise and
     # series edges -- larger than this is not treated as one story: its members

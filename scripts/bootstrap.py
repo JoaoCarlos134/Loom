@@ -6,6 +6,8 @@ upsert, and cached HTTP responses mean a second run does no network I/O.
     uv run python scripts/bootstrap.py
     uv run python scripts/bootstrap.py --only anime_jikan --limit 100
     uv run python scripts/bootstrap.py --no-ingest      # schema only
+    uv run python scripts/bootstrap.py --starter        # download the starter pack
+    uv run python scripts/bootstrap.py --starter path/to/loom-starter-v1.zip
 """
 
 from __future__ import annotations
@@ -158,6 +160,32 @@ def report(
     print(f"  region      : {settings.region}")
 
 
+def install_starter(location: str, sha256: str, force: bool) -> int:
+    """Download, verify and install the starter pack, then report the catalog."""
+    from recsys.starter import StarterError, install_pack
+
+    settings = get_settings()
+    print(f"Starter pack: {location}")
+    try:
+        result = install_pack(location, settings.data_dir, sha256=sha256, force=force)
+    except StarterError as exc:
+        print(f"\n  !! {exc}")
+        return 1
+    # A pack built by an older Loom gets this version's migrations. One that
+    # empties the read view is refilled here rather than left to fall back.
+    init_db()
+    with session() as conn:
+        if not conn.execute("SELECT EXISTS(SELECT 1 FROM works)").fetchone()[0]:
+            rebuild_derived(conn)
+    manifest = result.manifest
+    print(f"  installed pack {manifest.get('pack')} built {manifest.get('built_at')}")
+    for name, terms in manifest.get("sources", {}).items():
+        print(f"  {name}: {terms}")
+    print(f"  attribution: {settings.data_dir / 'ATTRIBUTION.md'}")
+    report([], None, None)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Initialise and populate the catalog")
     parser.add_argument("--only", action="append", metavar="NAME",
@@ -173,11 +201,23 @@ def main(argv: list[str] | None = None) -> int:
                              "reject (too few ratings, adult, not a work)")
     parser.add_argument("--prune-dry-run", action="store_true",
                         help="report what --prune would delete, and delete nothing")
+    parser.add_argument("--starter", nargs="?", const="", default=None, metavar="URL_OR_PATH",
+                        help="install the starter pack (books from shareable sources, "
+                             "with vectors and a ratings model) instead of ingesting; "
+                             "default: STARTER_URL")
+    parser.add_argument("--sha256", default="", help="with --starter: the expected checksum")
+    parser.add_argument("--force", action="store_true",
+                        help="with --starter: replace an existing catalog (never one "
+                             "holding your ratings)")
     args = parser.parse_args(argv)
 
     setup_logging()
     settings = get_settings()
     settings.ensure_dirs()
+
+    if args.starter is not None:
+        return install_starter(args.starter or settings.starter_url,
+                               args.sha256 or settings.starter_sha256, args.force)
 
     version = init_db()
     print(f"Schema ready at {settings.db_path} (v{version})")
