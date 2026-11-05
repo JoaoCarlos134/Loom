@@ -56,3 +56,24 @@ def test_it_measures_without_writing_a_byte(tmp_path, capsys):
 def test_a_missing_database_is_an_error_not_a_new_file(tmp_path):
     assert load().main(["--db", str(tmp_path / "none.db"), "--no-tests"]) == 1
     assert not (tmp_path / "none.db").exists()
+
+
+def test_out_writes_utf8_whatever_the_console(tmp_path):
+    """Windows PowerShell 5.1 re-encodes a redirect as UTF-16 and Python's
+    console default there is cp1252, so `--json > before.json` either mangles
+    or dies on the first Japanese title. --out writes the file itself."""
+    folder = tmp_path / "シュタインズ・ゲート"
+    folder.mkdir()
+    db = folder / "recsys.db"
+    init_db(db)
+    conn = connect(db)
+    upsert_items(conn, [UnifiedItem(domain="anime", source="anilist", source_id="1",
+                                    title="Steins;Gate", popularity=1.0)])
+    rebuild_derived(conn)
+    conn.close()
+    out = tmp_path / "before.json"
+
+    assert load().main(["--db", str(db), "--out", str(out), "--no-tests"]) == 0
+    report = json.loads(out.read_bytes().decode("utf-8"))
+    assert report["database"] == str(db)
+    assert report["catalog"]["rows"] == 1

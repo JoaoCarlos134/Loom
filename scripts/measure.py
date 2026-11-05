@@ -1,11 +1,11 @@
 """Measure a catalog: the numbers the README and ROADMAP quote, from the database.
 
-Read-only. The database is opened with ``mode=ro``, nothing is written, and no
+Read-only. The database is opened with ``mode=ro`` and never written, and no
 model is rebuilt -- so it is safe to point at the build you use every day:
 
     uv run python scripts/measure.py                    # DATA_DIR from .env
     uv run python scripts/measure.py --db path/to/recsys.db
-    uv run python scripts/measure.py --json > numbers.json
+    uv run python scripts/measure.py --out numbers.json
 
 Every number in the docs should be one this prints, not one edited by hand.
 A catalog built by an older version of Loom is measured as far as its schema
@@ -245,6 +245,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Measure a Loom catalog, read-only")
     parser.add_argument("--db", type=Path, default=None, help="default: DATA_DIR/recsys.db")
     parser.add_argument("--json", action="store_true", help="print one JSON document")
+    parser.add_argument("--out", type=Path, default=None, metavar="FILE",
+                        help="write the JSON document to FILE as UTF-8 (use this, not a "
+                             "redirect, on Windows PowerShell 5.1)")
     parser.add_argument("--no-tests", action="store_true", help="skip counting the tests")
     args = parser.parse_args(argv)
 
@@ -265,7 +268,11 @@ def main(argv: list[str] | None = None) -> int:
         report["tests"] = tests()
     conn.close()
 
-    if args.json:
+    if args.out:
+        args.out.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n",
+                            encoding="utf-8")
+        print(f"wrote {args.out}")
+    elif args.json:
         print(json.dumps(report, indent=2, ensure_ascii=False))
     else:
         for section, body in report.items():
