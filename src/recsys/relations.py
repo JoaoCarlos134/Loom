@@ -88,9 +88,11 @@ _VOLUME_TITLE = re.compile(
     r"^(?P<name>\S.*?\S),?\s+(?:Vol\.?|Volume)\s*(?P<pos>\d+(?:\.\d+)?)\b", re.IGNORECASE
 )
 
-#: What after the number marks a collection rather than a volume: "#1-3"
-#: (with a hyphen or an en dash), "#1-4 + 3.5", "#1, 2 & 3".
-_COLLECTION_MARKS = ("-", "\u2013", "+", "&", ",")
+#: What right after the number marks a collection rather than a volume: a
+#: range or a list running on to another number -- "#1-3" (hyphen or en dash),
+#: "#1-4 + 3.5", "#1, 2 & 3". A comma followed by words is a second series'
+#: name ("#40, Moist von Lipwig #3"), not a collection.
+_COLLECTION_TAIL = re.compile(r"^\s*[-\u2013+&,]\s*#?\s*\d")
 
 
 @dataclass(frozen=True)
@@ -112,7 +114,7 @@ def series_of(title: str | None) -> Series | None:
         return Series(
             match.group("name").strip(),
             float(match.group("pos")),
-            any(mark in rest for mark in _COLLECTION_MARKS),
+            _COLLECTION_TAIL.match(rest) is not None,
         )
     match = _VOLUME_TITLE.match(text)
     if match:

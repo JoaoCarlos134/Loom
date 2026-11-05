@@ -112,6 +112,9 @@ def test_a_series_is_read_from_the_goodreads_title_suffix(title, expected):
     ("The Oedipus Cycle (The Theban Plays, #1\u20133)", True),
     ("The Twilight Saga Complete Collection  (Twilight, #1-4 + 3.5)", True),
     ("Reaper Man (Discworld, #11; Death, #2)", False),
+    # A comma, then a second series' name: two memberships, not a boxed set.
+    ("Raising Steam (Discworld, #40, Moist von Lipwig #3 )", False),
+    ("The Lost Years (Merlin, #1, 2 & 3)", True),
     ("A Storm of Swords: Blood and Gold (A Song of Ice and Fire, #3: Part 2 of 2)", False),
 ])
 def test_a_boxed_set_is_told_apart_from_a_volume(title, collection):
