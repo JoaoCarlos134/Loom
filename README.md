@@ -17,10 +17,10 @@ filtering. You can rate things yourself, and `/api/recommend` will find works
 nearest your taste **in a domain you have never rated in**. **778 tests**,
 ruff- and mypy-clean.
 
-![Loom's For you tab: books recommended from four anime ratings](docs/screenshots/for-you-books.png)
+![Loom's For you tab: manga, a TV series, films, books and anime recommended from seven ratings](docs/screenshots/for-you.png)
 
-*Four anime rated, books recommended. Collaborative filtering cannot do this here, because no user
-in the corpus rated across domains; the text embeddings can. The real UI, over a full local build.*
+*Seven ratings (a novel, two manga, two films, two series) and one taste vector: For you answers across
+five media at once, ranked in a shared text-embedding space. The real UI, over a full local build.*
 
 ## What's interesting here
 
