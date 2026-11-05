@@ -51,7 +51,7 @@ uv run python scripts/embed.py --adopt        # vouch for a pre-fingerprint matr
 uv run python scripts/embed.py                # embed only what changed (--full: all)
 uv run python scripts/embed.py --evaluate     # score it against adaptation links
 uv run python scripts/cf.py                   # item-item CF, ~2 min; --evaluate
-uv run python scripts/measure.py              # the docs' numbers, read-only
+uv run python scripts/measure.py              # the docs' numbers, read-only (--out FILE)
 uv run python scripts/starter.py --version v1 # build a starter pack (does not publish)
 uv run python app.py                          # native window (--browser, --no-ui)
 uv sync --group package; uv run pyinstaller packaging/loom.spec --noconfirm
@@ -108,19 +108,19 @@ stdlib venv only.
 
 1. Measure the full build with this code, on a copy (`DATA_DIR` pointed at it),
    in this order -- ROADMAP "Where we are" gives the reasons:
-   `measure.py --json > before.json`; `embed.py --adopt` (before anything
-   relinks: a work's document folds in its siblings' text); `bootstrap.py
-   --only book_goodbooks --only book_openlibrary --only music_musicbrainz
-   --only idmap_wikidata` with `HTTP_CACHE_TTL_DAYS=0`; `bootstrap.py
-   --no-ingest`; `embed.py`; `measure.py --json > after.json`. Put the
+   `measure.py --out before.json`; `embed.py --adopt` (before anything
+   re-ingests or relinks: a work's document folds in its siblings' text);
+   `bootstrap.py --only book_goodbooks --only book_openlibrary --only
+   music_musicbrainz --only idmap_wikidata` with `HTTP_CACHE_TTL_DAYS=0` (it
+   relinks after); `embed.py`; `measure.py --out after.json`. Put the
    before/after into README and ROADMAP.
 2. Set `MAX_GROUP_SIZE` from the largest groups that measurement prints.
 3. From the same copy, `scripts/starter.py --version v1` (only vectors whose
    fingerprint matches the pack's own documents ship). With the owner's
    approval, publish it and pin its checksum as the `starter_sha256` default in
    `config.py` -- a stranger's checkout and the packaged app have no `.env`.
-4. Run `.github/workflows/package.yml` (manual dispatch) and check the Windows
-   build; it has never run.
+4. Once `package.yml` is on `main`, dispatch it by hand (or push a `v*` tag,
+   with the owner's approval) and check the Windows build; it has never run.
 5. ROADMAP "Next step": blend the two models; import a MAL/AniList library.
 
 ## The one architectural invariant

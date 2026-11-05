@@ -12,7 +12,7 @@ sources (an anime and its own TMDB entry are one work), calibrated onto one popu
 scale per domain, and grouped into stories (an adaptation, its sequels, a book series
 are one entry in results). Two recommendation models -- text embeddings and item-item
 collaborative filtering -- answer "more like this" in the detail view and "for you" from
-your own ratings, across domains. **970 tests**, ruff- and mypy-clean, CI on Windows for
+your own ratings, across domains. **972 tests**, ruff- and mypy-clean, CI on Windows for
 Python 3.12, 3.13 and 3.14.
 
 The owner's full build, as last measured before this release's changes (by hand,
@@ -39,8 +39,9 @@ five media at once, ranked in a shared text-embedding space. The real UI, over a
   representative is chosen by content, never by source name, so any source stays removable.
 - **Claims are measured.** Similarity is scored against adaptation links the sources assert, with the
   pairs whose titles differ reported apart, because a shared title alone makes the headline number easy.
-- **Built to run anywhere.** 970 tests that never touch the network, ruff and mypy clean, CI on Windows
-  for Python 3.12-3.14, a setup that needs no admin rights, and a packaged app for people without Python.
+- **Built to run anywhere.** 972 tests that never touch the network, ruff and mypy clean, CI on Windows
+  for Python 3.12-3.14, a setup that needs no admin rights, and a PyInstaller package for people
+  without Python (built on Linux; its Windows build has not run yet).
 
 ## Quick start
 
@@ -90,9 +91,11 @@ vectors or Open Library text, and the app only on Linux. No GitHub Release exist
 until the owner publishes one; `bootstrap.py --starter`
 says so if you run it before then. Building the pack yourself from a full build:
 `uv run python scripts/starter.py --version v1`, which writes to `DATA_DIR\dist`. A
-vector ships only if its fingerprint matches the pack's own document for that work;
-for a matrix built before fingerprints, run `scripts/embed.py --adopt` first. (A dry
-run on goodbooks-10k alone, without vectors or Open Library text, is a 7.8 MB archive.)
+vector ships only if its fingerprint matches the pack's own document for that work.
+A matrix built before fingerprints has to be adopted (`scripts/embed.py --adopt`)
+before anything re-ingests or relinks, then brought up to date with `scripts/embed.py`;
+ROADMAP "Where we are" gives the order. (A dry run on goodbooks-10k alone, without
+vectors or Open Library text, is a 7.8 MB archive.)
 
 `--starter` never replaces a database holding your own ratings, verifies the archive
 against `STARTER_SHA256` (or the published `.sha256`) and every file against the
@@ -177,27 +180,30 @@ TMDB again once it is older, then deletes what the refetch did not renew.
 ingesters named in `INGESTERS` (or `--only`), rebuilds the derived tables and prints
 a summary. Idempotent — safe to re-run.
 
-What each ingester brings. Counts are the owner's build (ROADMAP "Done: all six
-domains", as works per domain); times are `scripts/build.py`'s estimates:
+What each ingester brings. Counts are the owner's build, as works per domain (ROADMAP
+"Done: all six domains, filtered"), except the book ratings, counted on the file here;
+times are rough figures from earlier runs, the same ones `scripts/build.py` starts its
+estimates from before it has timed a step on your machine:
 
 | Ingester | Source | Owner's build | Cost |
 |---|---|---|---|
-| `anime_mal_csv` | Kaggle MAL dump, static | 14,478 anime in the file | ~2 GB download once, then seconds |
+| `anime_mal_csv` | Kaggle MAL dump, static | 14,478 anime in the file | ~2 GB download once, then ~2 min |
 | `anime_anilist` | AniList GraphQL, live | with the dump: 18,764 anime works | ~20 min at 30 req/min, no key |
 | `anime_jikan` | Jikan v4, live API | -- | degraded upstream; not in the full build |
+| `anime_jikan_text` | Jikan v4, one title per request | -- | an alternative text source; not in the full build |
 | `manga_anilist` | AniList GraphQL, live, partitioned by year | 29,034 manga | ~30 min |
 | `movie_tmdb` | TMDB, live | 9,659 films | ~30 min; **needs a free API read token** |
 | `tv_tmdb` | TMDB, live | 9,968 shows | ~25 min; same token |
 | `book_goodbooks` | goodbooks-10k, GitHub CSVs | 10,000 books | seconds, no credential |
 | `book_openlibrary` | Open Library | the synopses and covers goodbooks lacks | ~1 h at 3 req/s |
-| `music_musicbrainz` | MusicBrainz + Deezer | 6,556 composers | ~2.5 h; MusicBrainz asks under 1 req/s |
+| `music_musicbrainz` | MusicBrainz + Deezer | 6,556 composers | ~2.5 h; MusicBrainz asks for 1 req/s and Loom stays under it |
 | `anime_mal_ratings` | same Kaggle archive | 19,172,125 ratings | ~1.5 min; most of the database's size |
 | `book_goodbooks_ratings` | goodbooks-10k, GitHub CSV | 5,976,479 ratings | ~1.5 min, 72 MB download, no credential |
 | `idmap_wikidata` | Wikidata SPARQL (CC0) | MAL <-> TMDB id pairs | one query; links anime to their TMDB entries |
 
 The two ratings loaders are not in the default `INGESTERS` list, because they are
-most of a full build's size (the owner's is 2.02 GB with them); the full build runs
-them, and `--only` runs them on their own:
+most of a full build's size; the full build runs them, and `--only` runs them on
+their own:
 
 ```powershell
 uv run python scripts/bootstrap.py --only anime_mal_ratings
@@ -240,7 +246,7 @@ uv run python app.py --no-ui     # serve only, for curl/httpie against the API
 ### 6. Tests and checks
 
 ```powershell
-uv run pytest          # 970 tests, none touching the network
+uv run pytest          # 972 tests, none touching the network
 uv run ruff check .    # lint
 uv run mypy            # type check
 ```
@@ -465,16 +471,16 @@ ordering put it first. It is a full rebuild each time — tens of thousands of
 rows, well under a second, and an incremental linker would have to reason about
 rows whose ids changed underneath it. `--no-link` skips it.
 
-**An anime and its own TMDB entry are one work, through an exact id map.** TMDB
-files a lot of anime under television and film, so a full build held *Steins;Gate*
-twice, and rating one recommended the other; the owner counted 625 TMDB shows
-bearing exactly an anime's title. TMDB rows carry no MAL id, so `link.py` could not
-join them -- and an equal title is not evidence. Wikidata states the pair exactly (MyAnimeList anime ID P4086
-beside TMDB TV ID P4983 or movie ID P4947, CC0), so `idmap_wikidata` loads those
+**An anime and its own TMDB entry are one work, through an exact id map.** TMDB files
+a lot of anime under television and film, so a full build held *Steins;Gate* twice,
+and rating one recommended the other; the owner counted 625 TMDB shows bearing exactly
+an anime's title. TMDB rows carry no MAL id, so `link.py` could not join them -- and
+an equal title is not evidence. Wikidata states the pair exactly (MyAnimeList anime ID
+P4086 beside TMDB TV ID P4983 or movie ID P4947, CC0), so `idmap_wikidata` loads those
 claims into `id_map` and the linker lets a row with no id of its own join the work a
 claim names. A mapped row never represents the work (otherwise *Steins;Gate* would
-move to the TV domain because TMDB lists more keywords), a claim cannot create a
-work alone, and a TMDB show the map assigns to several MAL entries (one show, several
+move to the TV domain because TMDB lists more keywords), a claim cannot create a work
+alone, and a TMDB show the map assigns to several MAL entries (one show, several
 seasons) is left alone and counted.
 
 **One entry per story.** An adaptation, its sequels and a book's volumes are
@@ -644,14 +650,14 @@ and the only one Loom will refuse to run without.
 
 How Loom keeps to the two clauses the audit could not settle from code alone: the
 notice above is shown in the app's own footer, as the terms require (TMDB's logo is
-not, yet); and **the full build keeps TMDB data under six months old** -- `scripts/build.py`
-counts a TMDB step older than `TMDB_MAX_AGE_DAYS` (180) as not done and fetches it
-again and then deletes the TMDB rows and cached responses the refetch did not
-renew, and no TMDB row ever goes into the starter pack. That holds when you run the
-full build; a catalog built once with `bootstrap.py` and never rebuilt ages like any
-other file, and deleting it, or running `build.py` again, is yours to do. The "recommendation-based
-services" clause names operated services; Loom is a local, single-user app, and
-that reading is the owner's, not TMDB's.
+not, yet); and **the full build keeps TMDB data under six months old** --
+`scripts/build.py` counts a TMDB step older than `TMDB_MAX_AGE_DAYS` (180) as not
+done and fetches it again and then deletes the TMDB rows and cached responses the
+refetch did not renew, and no TMDB row ever goes into the starter pack. That holds
+when you run the full build; a catalog built once with `bootstrap.py` and never
+rebuilt ages like any other file, and deleting it, or running `build.py` again, is
+yours to do. The "recommendation-based services" clause names operated services;
+Loom is a local, single-user app, and that reading is the owner's, not TMDB's.
 
 ### goodbooks-10k
 
@@ -685,12 +691,12 @@ documented ceiling.
 
 Two known tensions, stated plainly rather than buried:
 
-- `book_openlibrary` makes roughly one hundred batch calls to resolve ISBNs and
-  then **one request per book** — about ten thousand for a full run. Open Library
-  asks bulk consumers to use their monthly dumps. Responses are cached, the full
-  build makes them once, and a published starter pack would carry the result so
-  that most people never make them at all; the dump (~3 GB of works) remains the honest fix and is
-  deferred (ROADMAP).
+- `book_openlibrary` makes roughly one hundred batch calls to resolve ISBNs and then
+  **one request per book** — about ten thousand for a full run. Open Library asks
+  bulk consumers to use their monthly dumps. Responses are cached, the full build
+  makes them once, and a published starter pack would carry the result so that most
+  people never make them at all; the dump (~3 GB of works) remains the honest fix
+  and is deferred (ROADMAP).
 - AniList's current terms (AniList/docs, `docs/guide/terms-of-use.md`, 2026-08-17)
   prohibit "hoarding or mass collection of data from the AniList API" and use
   "within competing, non-complementary services ... including anime and manga list

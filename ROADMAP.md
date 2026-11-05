@@ -63,9 +63,10 @@ public.
       deletes (`prune.expire`) the TMDB rows and cached responses the refetch
       did not renew; no TMDB row ever reaches the starter pack. That holds each
       time `build.py` runs; a catalog built with `bootstrap.py` and never
-      rebuilt is not swept. Still open, and the owner's to decide: TMDB's logo (it has to be committed as a file, and could not be
-      fetched from the build machine), and whether a local single-user app is
-      an "operated recommendation service" -- the terms do not say.
+      rebuilt is not swept. Still open, and the owner's to decide: TMDB's logo
+      (it has to be committed as a file, and could not be fetched from the build
+      machine), and whether a local single-user app is an "operated
+      recommendation service" -- the terms do not say.
 - [ ] **Open Library per-book requests versus their monthly dump: deferred.**
       The dump is the honest fix and is a new ingester reading ~3 GB of
       `ol_dump_works`; it is deferred because the cost the guidance is about is
@@ -80,16 +81,16 @@ public.
       MyAnimeList, and an uploader's licence cannot clear MAL's terms. So it is
       never redistributed: each user downloads it through their own Kaggle
       account, as before, and the README says both things.
-- [ ] **The AniList clause: deferred, and it is the owner's decision.** AniList's
-      current terms (AniList/docs, 2026-08-17) prohibit "hoarding or mass
-      collection of data from the AniList API" and use "within competing,
+- [ ] **The AniList clause: deferred, and it is the owner's decision.**
+      AniList's current terms (AniList/docs, 2026-08-17) prohibit "hoarding or
+      mass collection of data from the AniList API" and use "within competing,
       non-complementary services ... including anime and manga list or tracker
       services", for all data. Loom is local and redistributes nothing from
       AniList, but a full build's partitioned sweep (29,034 manga alone on the
-      owner's build) is mass collection by any reading, and the library makes the app more list-shaped.
-      The options are to keep it, to narrow AniList to enriching the MAL ids the
-      dump already holds (losing post-2018 anime and most manga), or to ask
-      AniList. Not decided here.
+      owner's build) is mass collection by any reading, and the library makes
+      the app more list-shaped. The options are to keep it, to narrow AniList to
+      enriching the MAL ids the dump already holds (losing post-2018 anime and
+      most manga), or to ask AniList. Not decided here.
 
 ### What the audit found clean, and does not need rechecking
 
@@ -116,21 +117,22 @@ Library text), `scripts/build.py` has been run end to end only on the sources
 this machine reached plus a fixture, and the packaged app has been built and
 smoke-tested on Linux only -- its Windows build has never run.
 
-Measured in this release's session (2026-11-05), on what the build machine could
-reach -- the goodbooks-10k files from GitHub and synthetic catalogs; it could not
-reach TMDB, AniList, Kaggle, Wikidata, Open Library, MusicBrainz, Deezer or the
-embedding model:
+Measured in this release's work (2026-10-07 to 2026-11-05; the commit named where
+it was an earlier session), on what the build machine could reach -- the goodbooks-10k
+files from GitHub and synthetic catalogs; it could not reach TMDB, AniList, Kaggle,
+Wikidata, Open Library, MusicBrainz, Deezer or the embedding model:
 
 ```
-tests                970   none touch the network; CI on Windows, Python 3.12-3.14
-goodbooks-10k     10,000   books, 5,976,479 ratings (~70 s to load)
+tests                972   none touch the network; CI on Windows, Python 3.12-3.14
+goodbooks-10k     10,000   books, 5,976,479 ratings (~70 s to load, ab70d30)
   book series        852   of 2+ books, holding 3,640 books; 2,788 fold behind a card
   cards            7,212   what a reader sees of the 10,000
   nophoto covers   3,332   now stored as no cover
-  CF model       499,900   pairs over 9,998 books (~95 s)
+  CF model       499,900   pairs over 9,998 books (~95 s, ab70d30)
 starter dry run   7.8 MB   books + CF, no vectors, no Open Library text; 2 min 38 s
 search, 104k rows          a/s/alpha/"steins gate": 149/113/61/14 ms (70/57/31/9 before)
-works rebuild      1.7 s   104k synthetic rows (~1.1 s before the Browse order)
+works rebuild      1.7 s   104k synthetic rows, at 313c4ef (~1.1 s before the Browse
+                           order); the search keys added after it were not re-timed
 ```
 
 The full build, as the owner measured it on 2026-11-05 *before* these changes:
@@ -150,18 +152,20 @@ Those were counted by hand before `scripts/measure.py` existed; from now on the
 script prints them. The after-numbers for the full build need that machine, on a
 copy of the data (`DATA_DIR` pointed at the copy), in this order:
 
-1. `scripts/measure.py --json > before.json` -- read-only;
+1. `scripts/measure.py --out before.json` -- read-only;
 2. `scripts/embed.py --adopt` -- vouch for the old matrix *before* anything
-   relinks, because a work's document folds in its siblings' text and adopting
-   after the twins join would vouch for stale anime vectors;
+   re-ingests or relinks, because a work's document is its own text plus its
+   siblings', and adopting afterwards would vouch for vectors of text that has
+   since changed;
 3. `bootstrap.py --only book_goodbooks --only book_openlibrary --only
-   music_musicbrainz --only idmap_wikidata` with `HTTP_CACHE_TTL_DAYS=0`, so the
-   cache is reused -- without it the copy keeps `/nophoto/` URLs and no Open
-   Library or Deezer covers;
-4. `bootstrap.py --no-ingest` -- relink and rebuild the derived tables;
-5. `scripts/embed.py` -- re-embeds only the works whose documents changed;
-6. `scripts/measure.py --json > after.json`;
-7. `scripts/starter.py --version v1` -- the pack, from the same copy.
+   music_musicbrainz --only idmap_wikidata` -- without this re-ingest the copy
+   keeps goodbooks' `/nophoto/` URLs and has no Open Library or Deezer covers.
+   Set `HTTP_CACHE_TTL_DAYS=0` first so the cache is reused instead of refetched
+   for hours (any Deezer error replies an older version cached are fetched
+   again). `bootstrap.py` relinks and rebuilds the derived tables after it;
+4. `scripts/embed.py` -- re-embeds only the works whose documents changed;
+5. `scripts/measure.py --out after.json`;
+6. `scripts/starter.py --version v1` -- the pack, from the same copy.
 
 ## Phases
 
@@ -188,7 +192,7 @@ copy of the data (`DATA_DIR` pointed at the copy), in this order:
 | **1.0** | Search: exact titles, fused popularity | `db.query_items`, `works` keys (migration 10) | **done** |
 | **1.0** | Covers; Browse opens on them | ingesters, `works.browse_rank` (migration 9) | **done** |
 | **1.0** | "More like this" in the detail view | `ui/app.js` | **done** |
-| **1.0** | Starter pack, full build, packaged app | `starter.py`, `build.py`, `packaging/` | **done**, unpublished |
+| **1.0** | Starter pack, full build, packaged app | `starter.py`, `build.py`, `packaging/` | code done; pack dry-run only, package Linux-only; unpublished |
 | **3** | Your own library — rate things | `ratings` table, `local:` user namespace — no migration | **done** |
 | **3** | Import an existing library (MAL/AniList export) | new file in `ingest/`, writes `local:` rows | solves cold start |
 | **3** | Canonical tag vocabulary | authored file in repo + feature-build layer | bridge, step 1 |
@@ -227,8 +231,8 @@ a test that fails without it; the measurements after need the full build (see
    CF where it has an answer) closes the detail view.
 6. **`requires-python <3.13` with no reason recorded.** Widened to `<3.15` with
    no package version changing; one real 3.14 difference fixed; CI tests all three.
-7. **Stale numbers.** `scripts/measure.py`; the numbers above are its, or
-   labelled with where they came from.
+7. **Stale numbers.** `scripts/measure.py` prints them from now on; the ones
+   above predate it and are labelled with where they came from.
 
 Found and fixed along the way, mostly by reviewing each step: an anchor query
 whose plan went quadratic (over ten minutes on a full-size synthetic catalog,
@@ -1258,9 +1262,9 @@ common public ones have it.
   has no fingerprints, so its vectors are kept and reported as *unverified*.
   Linking the TMDB twins changes those anime works' documents (they gain TMDB's
   keywords); `embed.py --check` reports the state. `embed.py --adopt` vouches
-  for the vectors as they are (right for the books a starter pack ships, whose
-  documents did not change), and one `--full` run (~2.5 h) makes every vector
-  verifiable.
+  for the vectors as they are, which is right only before anything re-ingests
+  or relinks (see "Where we are"), and one `--full` run (~2.5 h) makes every
+  vector verifiable.
 
 - **`MAX_GROUP_SIZE` (250) is provisional.** It keeps a chain of crossovers from
   making one giant "story" that suppresses unrelated works; it has not been set
@@ -1272,8 +1276,8 @@ common public ones have it.
 - **The starter pack and the packaged app are not published.** Their code is
   tested; the pack has only been dry-run on goodbooks-10k (no vectors, no Open
   Library text) and the app built and smoke-tested on Linux. Publishing needs the
-  owner's go-ahead, and the Windows package workflow runs once it is on `main` or
-  is dispatched by hand.
+  owner's go-ahead. The Windows package workflow can be dispatched by hand once
+  it is on `main`, or runs on a pushed `v*` tag.
 
 - ~~Cross-source popularity ordering is wrong.~~ **Resolved**, by calibrating
   on overlap rather than by percentile ranking. See below.
