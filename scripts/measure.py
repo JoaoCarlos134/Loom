@@ -253,7 +253,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"no database at {path}", file=sys.stderr)
         return 1
     conn = open_ro(path)
-    report = {
+    report: dict[str, Any] = {
         "database": str(path),
         "catalog": catalog(conn),
         "twins": twins(conn),
