@@ -161,15 +161,20 @@ def _anchors(
     one work, so the anchors are exact rather than title-matched.
     """
     rows = conn.execute(
-        """SELECT s.popularity AS ps, r.popularity AS pr
+        """SELECT s.popularity AS ps, r.popularity AS pr, r.domain AS rd
            FROM links ls
            JOIN items s ON s.item_uid = ls.item_uid AND s.source = ?
            JOIN links lr ON lr.work_uid = ls.work_uid
            JOIN items r ON r.item_uid = lr.item_uid AND r.source = ?
-                       AND r.domain = s.domain
            WHERE s.domain = ? AND s.popularity > 0 AND r.popularity > 0""",
         (source, reference, domain),
     ).fetchall()
+    # A work can span domains, and an anchor is only an anchor within one.
+    # Checked here rather than in the join: `r.domain = s.domain` there lets
+    # SQLite drive the reference side from the domain index instead of from
+    # `links`, which is every reference row for every source row -- measured
+    # at over ten minutes on a full-size catalog against 1.4 s for linking.
+    rows = [r for r in rows if r["rd"] == domain]
     return (
         [math.log(r["ps"]) for r in rows],
         [math.log(r["pr"]) for r in rows],

@@ -305,3 +305,29 @@ def test_raw_popularity_is_never_modified(conn):
     raw = conn.execute("SELECT popularity FROM items WHERE item_uid='anime:other:3'").fetchone()
     assert raw["popularity"] == 15.0
     assert value(conn, "anime:other:3") != 15.0
+
+
+def test_the_anchor_query_walks_links_rather_than_scanning_the_domain(tmp_path):
+    """Regression: comparing the two rows' domains inside the join let SQLite
+    drive the reference side from the domain index -- every reference row for
+    every source row, quadratic, and more than ten minutes on a full-size
+    catalog. The plan must reach the reference row through `links`."""
+    import recsys.popularity as popularity
+    from recsys.db import connect, init_db
+
+    init_db(tmp_path / "plan.db")
+    conn = connect(tmp_path / "plan.db")
+    captured = []
+    real_execute = conn.execute
+
+    class Spy:
+        def execute(self, sql, params=()):
+            captured.append((sql, params))
+            return real_execute(sql, params)
+
+    popularity._anchors(Spy(), "anime", "anilist", "mal")
+    sql, params = captured[0]
+    plan = " | ".join(r[3] for r in real_execute(f"EXPLAIN QUERY PLAN {sql}", params))
+    assert "idx_links_work" in plan, plan
+    assert plan.count("idx_items_domain_pop") <= 1, plan
+    conn.close()
