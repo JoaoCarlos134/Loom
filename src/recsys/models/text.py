@@ -23,14 +23,25 @@ and tags, so nothing is excluded from the space for lacking a synopsis.
 
 Vectors are L2-normalised on the way out, so cosine similarity is a dot product
 and `similarity.py` can compare against the whole catalog with one matmul.
+
+**Each vector carries the fingerprint of the document it was made from**, and of
+the model. A full build is 2.5 hours, and the only way to know whether one was
+needed used to be knowing what had changed. Now a rebuild embeds only works
+whose document moved or that are new, keeps every other vector, and
+``matrix_freshness`` reports the difference without embedding anything. A
+matrix from before fingerprints is kept and reported as unverified -- never
+claimed fresh -- until a full rebuild replaces it.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
 
 from recsys.log import get_logger
 
@@ -48,8 +59,80 @@ Embedder = Callable[[Sequence[str]], Iterable[Sequence[float]]]
 class EmbedResult:
     n_documents: int = 0
     n_skipped: int = 0
+    n_embedded: int = 0  # documents sent to the embedder this run
+    n_reused: int = 0  # vectors carried over from the previous matrix
     dim: int = 0
     by_domain: dict[str, int] = field(default_factory=dict)
+
+
+def doc_fingerprint(document: str, model: str) -> str:
+    """What a vector was made from: the document and the model, hashed.
+
+    The model is part of it because a vector is only comparable with vectors
+    from the same model -- switching models must re-embed everything.
+    """
+    return hashlib.sha256(f"{model}\0{document}".encode()).hexdigest()[:24]
+
+
+@dataclass
+class Freshness:
+    """How far a matrix is from the catalog it was built for."""
+
+    n_works: int = 0  # documents the catalog would embed today
+    n_current: int = 0  # vectors whose fingerprint matches today's document
+    n_changed: int = 0  # vectors whose document has changed since
+    n_missing: int = 0  # works with no vector at all
+    n_orphaned: int = 0  # vectors for works that no longer exist or represent
+    n_unknown: int = 0  # vectors from before fingerprints: unverifiable
+
+    @property
+    def is_fresh(self) -> bool:
+        return self.n_current == self.n_works and not (self.n_orphaned or self.n_unknown)
+
+    @property
+    def n_to_embed(self) -> int:
+        """What an incremental rebuild would send to the embedder."""
+        return self.n_changed + self.n_missing
+
+
+def _previous(path: Path) -> dict[str, tuple[str | None, Any]]:
+    """item_uid -> (fingerprint or None, vector) from an existing matrix."""
+    import pyarrow.parquet as pq
+
+    if not Path(path).is_file():
+        return {}
+    table = pq.read_table(path)
+    uids = table.column("item_uid").to_pylist()
+    hashes = (
+        table.column("doc_hash").to_pylist()
+        if "doc_hash" in table.column_names
+        else [None] * len(uids)
+    )
+    vectors = table.column("vector").to_pylist()
+    return {u: (h, v) for u, h, v in zip(uids, hashes, vectors, strict=True)}
+
+
+def matrix_freshness(conn: sqlite3.Connection, path: Path, *, model: str) -> Freshness:
+    """Compare a matrix with what the catalog would embed today. Embeds nothing."""
+    previous = _previous(path)
+    result = Freshness()
+    seen: set[str] = set()
+    for uid, _, document in work_documents(conn):
+        if not document.strip():
+            continue
+        result.n_works += 1
+        seen.add(uid)
+        old = previous.get(uid)
+        if old is None:
+            result.n_missing += 1
+        elif old[0] is None:
+            result.n_unknown += 1
+        elif old[0] == doc_fingerprint(document, model):
+            result.n_current += 1
+        else:
+            result.n_changed += 1
+    result.n_orphaned = sum(1 for uid in previous if uid not in seen)
+    return result
 
 
 def compose_document(title: str, tags: Sequence[str], description: str | None) -> str:
@@ -131,89 +214,120 @@ def build_embeddings(
     *,
     out_path,
     batch_size: int = 256,
+    model: str = "",
+    reuse: bool = True,
 ) -> EmbedResult:
     """Embed every visible work and write the vectors to parquet.
 
     Written to ``DATA_DIR``, never the repo, like everything else derived. The
-    file is replaced wholesale rather than updated in place -- the catalog
-    changes rarely and in bulk, and a partial matrix is worse than an old one.
+    file is replaced wholesale -- a partial matrix is worse than an old one --
+    but with ``reuse`` (the default) a vector whose fingerprint matches today's
+    document is carried over rather than recomputed, and so is a vector from a
+    matrix older than fingerprints, which stays marked unverified. Pass
+    ``reuse=False`` to embed everything again.
     """
     import numpy as np
     import pyarrow as pa
     import pyarrow.parquet as pq
 
     result = EmbedResult()
+    out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    previous = _previous(out_path) if reuse else {}
     # Written to a temporary name and moved into place at the end, so an
     # interrupted build never leaves a half-written matrix that later loads as
     # if it were complete.
     partial = out_path.with_suffix(out_path.suffix + ".part")
     writer = None
 
-    batch_uids: list[str] = []
-    batch_domains: list[str] = []
-    batch_texts: list[str] = []
-
-    def flush() -> None:
-        """Embed and *write* one batch.
-
-        Streamed to disk a batch at a time rather than accumulated. A full build
-        is tens of minutes and holding every vector in memory until the end
-        means a failure at minute fifty costs all of it -- the same reasoning
-        that made ingest/base.py flush its buffer on the failure path.
-        """
+    def write(uids: list[str], domains: list[str], hashes: list[str | None], block) -> None:
         nonlocal writer
-        if not batch_texts:
-            return
-        produced = list(embedder(batch_texts))
-        if len(produced) != len(batch_texts):
+        if writer is not None and int(block.shape[1]) != result.dim:
+            # Kept vectors from a matrix older than fingerprints carry no model
+            # name, so a model change shows up here first.
             raise RuntimeError(
-                f"embedder returned {len(produced)} vectors for {len(batch_texts)} documents"
+                f"the matrix on disk holds {result.dim}-dimension vectors and the "
+                f"embedder makes {block.shape[1]}; rebuild it with scripts/embed.py --full"
             )
-        block = np.asarray(produced, dtype="float32")
-        # Normalised here rather than at query time so cosine is a dot product
-        # and every consumer gets the same convention for free.
-        norms = np.linalg.norm(block, axis=1, keepdims=True)
-        norms[norms == 0] = 1.0
-        block = block / norms
-
         if writer is None:
             result.dim = int(block.shape[1])
             schema = pa.schema([
                 ("item_uid", pa.string()),
                 ("domain", pa.string()),
                 ("vector", pa.list_(pa.float32(), result.dim)),
+                ("doc_hash", pa.string()),
             ])
             writer = pq.ParquetWriter(partial, schema, compression="zstd")
-
         writer.write_table(pa.table({
-            "item_uid": pa.array(batch_uids, type=pa.string()),
-            "domain": pa.array(batch_domains, type=pa.string()),
+            "item_uid": pa.array(uids, type=pa.string()),
+            "domain": pa.array(domains, type=pa.string()),
             "vector": pa.FixedSizeListArray.from_arrays(
                 pa.array(block.reshape(-1), type=pa.float32()), result.dim
             ),
+            "doc_hash": pa.array(hashes, type=pa.string()),
         }, schema=writer.schema))
-
-        for d in batch_domains:
+        for d in domains:
             result.by_domain[d] = result.by_domain.get(d, 0) + 1
-        batch_uids.clear()
-        batch_domains.clear()
-        batch_texts.clear()
+
+    pending: list[tuple[str, str, str, str]] = []  # uid, domain, document, fingerprint
+    kept: list[tuple[str, str, str | None, Any]] = []  # uid, domain, fingerprint, vector
+
+    def flush_pending() -> None:
+        """Embed and *write* one batch.
+
+        Streamed to disk a batch at a time rather than accumulated. A full build
+        is hours, and holding every vector in memory until the end means a
+        failure late on costs all of it -- the same reasoning that made
+        ingest/base.py flush its buffer on the failure path.
+        """
+        if not pending:
+            return
+        texts = [p[2] for p in pending]
+        produced = list(embedder(texts))
+        if len(produced) != len(texts):
+            raise RuntimeError(
+                f"embedder returned {len(produced)} vectors for {len(texts)} documents"
+            )
+        block = np.asarray(produced, dtype="float32")
+        # Normalised here rather than at query time so cosine is a dot product
+        # and every consumer gets the same convention for free.
+        norms = np.linalg.norm(block, axis=1, keepdims=True)
+        norms[norms == 0] = 1.0
+        write([p[0] for p in pending], [p[1] for p in pending],
+              [p[3] for p in pending], block / norms)
+        result.n_embedded += len(pending)
+        pending.clear()
+
+    def flush_kept() -> None:
+        if not kept:
+            return
+        write([k[0] for k in kept], [k[1] for k in kept], [k[2] for k in kept],
+              np.asarray([k[3] for k in kept], dtype="float32"))
+        result.n_reused += len(kept)
+        kept.clear()
 
     try:
         for uid, domain, document in work_documents(conn):
             if not document.strip():
                 result.n_skipped += 1
                 continue
-            batch_uids.append(uid)
-            batch_domains.append(domain)
-            batch_texts.append(document)
             result.n_documents += 1
-            if len(batch_texts) >= batch_size:
-                flush()
-                if result.n_documents % (batch_size * 10) == 0:
-                    log.info("embedded %d works", result.n_documents)
-        flush()
+            fingerprint = doc_fingerprint(document, model)
+            old = previous.get(uid)
+            # Reused when it was made from exactly this document, or when it
+            # predates fingerprints and so cannot be shown to be stale.
+            if old is not None and old[0] in (fingerprint, None):
+                kept.append((uid, domain, old[0], old[1]))
+                if len(kept) >= 4096:
+                    flush_kept()
+                continue
+            pending.append((uid, domain, document, fingerprint))
+            if len(pending) >= batch_size:
+                flush_pending()
+                if result.n_embedded % (batch_size * 10) == 0:
+                    log.info("embedded %d works", result.n_embedded)
+        flush_kept()
+        flush_pending()
     finally:
         if writer is not None:
             writer.close()
@@ -224,5 +338,6 @@ def build_embeddings(
         return result
 
     partial.replace(out_path)
-    log.info("wrote %d x %d vectors to %s", result.n_documents, result.dim, out_path)
+    log.info("wrote %d x %d vectors to %s (%d embedded, %d reused)",
+             result.n_documents, result.dim, out_path, result.n_embedded, result.n_reused)
     return result

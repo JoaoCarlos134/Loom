@@ -8,12 +8,21 @@ parameter rather than an import.
 from __future__ import annotations
 
 import numpy as np
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
 from recsys.db import connect, init_db, upsert_items
 from recsys.link import rebuild_links
 from recsys.models.similarity import SimilarityIndex
-from recsys.models.text import MAX_DESCRIPTION, build_embeddings, compose_document, work_documents
+from recsys.models.text import (
+    MAX_DESCRIPTION,
+    build_embeddings,
+    compose_document,
+    doc_fingerprint,
+    matrix_freshness,
+    work_documents,
+)
 from recsys.schemas import UnifiedItem
 
 
@@ -237,3 +246,145 @@ def test_results_come_back_ordered(index):
 
 def test_k_larger_than_the_catalog_is_not_an_error(index):
     assert len(index.similar_to("anime:anilist:1", k=999)) == len(index) - 1
+
+
+# ---- freshness: re-embed only what changed ---------------------------------
+#
+# A full rebuild is 2.5 hours on 84k works, and the ROADMAP warns it must not be
+# paid casually -- but the only way to know whether it was needed was to know
+# what had changed. Each vector now carries a fingerprint of the exact document
+# (and model) it was made from, so a rebuild embeds only the works whose text
+# moved, and a check can say so without embedding anything.
+
+MODEL = "fake/model-1"
+
+
+def built(conn, tmp_path, seen=None, **kw):
+    out = tmp_path / "m.parquet"
+    embedder = counting_embedder(seen if seen is not None else [])
+    return out, build_embeddings(conn, embedder, out_path=out, model=MODEL, **kw)
+
+
+def seed(conn):
+    upsert_items(conn, [
+        item("anime", "anilist", 1, title="Steins;Gate", description="A lab."),
+        item("book", "goodbooks", 2, title="Dark Matter", tags=["thriller"]),
+        item("movie", "tmdb", 3, title="Primer", description="Two engineers."),
+    ])
+
+
+def test_each_vector_records_the_fingerprint_of_its_document(conn, tmp_path):
+    seed(conn)
+    out, _ = built(conn, tmp_path)
+    table = pq.read_table(out)
+    docs = {uid: doc for uid, _, doc in work_documents(conn)}
+    got = dict(zip(table.column("item_uid").to_pylist(),
+                   table.column("doc_hash").to_pylist(), strict=True))
+    assert got == {uid: doc_fingerprint(doc, MODEL) for uid, doc in docs.items()}
+
+
+def test_a_rebuild_embeds_only_the_work_whose_text_changed(conn, tmp_path):
+    seed(conn)
+    out, _ = built(conn, tmp_path)
+    before = SimilarityIndex.load(out)
+    upsert_items(conn, [item("anime", "anilist", 1, title="Steins;Gate",
+                             description="A lab of self-styled scientists.")])
+    seen: list[str] = []
+    _, result = built(conn, tmp_path, seen)
+    assert len(seen) == 1 and "self-styled" in seen[0]
+    assert (result.n_embedded, result.n_reused) == (1, 2)
+    after = SimilarityIndex.load(out)
+    assert np.allclose(after.vector_for("movie:tmdb:3"), before.vector_for("movie:tmdb:3"))
+
+
+def test_new_works_are_added_and_vanished_ones_dropped(conn, tmp_path):
+    seed(conn)
+    out, _ = built(conn, tmp_path)
+    upsert_items(conn, [
+        item("anime", "mal", 1, title="Steins;Gate", external_ids={"mal_id": "9"}),
+        item("anime", "anilist", 1, title="Steins;Gate", description="A lab.",
+             external_ids={"mal_id": "9"}),
+        item("tv", "tmdb", 4, title="Dark"),
+    ])
+    rebuild_links(conn)
+    seen: list[str] = []
+    _, result = built(conn, tmp_path, seen)
+    uids = set(SimilarityIndex.load(out).uids)
+    assert "tv:tmdb:4" in uids and "anime:mal:1" not in uids
+    assert result.n_embedded == len(seen)
+
+
+def test_another_model_invalidates_every_vector(conn, tmp_path):
+    seed(conn)
+    built(conn, tmp_path)
+    seen: list[str] = []
+    out = tmp_path / "m.parquet"
+    build_embeddings(conn, counting_embedder(seen), out_path=out, model="fake/model-2")
+    assert len(seen) == 3
+
+
+def test_a_full_rebuild_can_still_be_asked_for(conn, tmp_path):
+    seed(conn)
+    built(conn, tmp_path)
+    seen: list[str] = []
+    built(conn, tmp_path, seen, reuse=False)
+    assert len(seen) == 3
+
+
+def test_freshness_is_measured_without_embedding_anything(conn, tmp_path):
+    seed(conn)
+    out, _ = built(conn, tmp_path)
+    fresh = matrix_freshness(conn, out, model=MODEL)
+    assert (fresh.n_works, fresh.n_current, fresh.is_fresh) == (3, 3, True)
+
+    upsert_items(conn, [item("movie", "tmdb", 3, title="Primer", description="Changed."),
+                        item("tv", "tmdb", 4, title="Dark")])
+    stale = matrix_freshness(conn, out, model=MODEL)
+    assert (stale.n_current, stale.n_changed, stale.n_missing, stale.is_fresh) == (2, 1, 1, False)
+    assert stale.n_to_embed == 2
+
+
+def test_no_matrix_at_all_is_every_work_missing(conn, tmp_path):
+    seed(conn)
+    fresh = matrix_freshness(conn, tmp_path / "none.parquet", model=MODEL)
+    assert (fresh.n_missing, fresh.is_fresh) == (3, False)
+
+
+def test_a_matrix_from_before_fingerprints_is_kept_and_reported(conn, tmp_path):
+    """The full build's matrix predates this and cost 2.5 hours. Its vectors
+    are kept -- nothing says their documents changed -- and reported as
+    unverified rather than claimed fresh; only works missing from it embed."""
+    seed(conn)
+    out = tmp_path / "m.parquet"
+    pq.write_table(pa.table({
+        "item_uid": ["anime:anilist:1", "book:goodbooks:2"],
+        "domain": ["anime", "book"],
+        "vector": pa.FixedSizeListArray.from_arrays(
+            pa.array(np.ones(16, dtype="float32") / 4), 8),
+    }), out)
+    fresh = matrix_freshness(conn, out, model=MODEL)
+    assert (fresh.n_unknown, fresh.n_missing, fresh.is_fresh) == (2, 1, False)
+    assert fresh.n_to_embed == 1
+
+    seen: list[str] = []
+    built(conn, tmp_path, seen)
+    assert len(seen) == 1 and seen[0].startswith("Primer")
+    table = pq.read_table(out)
+    hashes = dict(zip(table.column("item_uid").to_pylist(),
+                      table.column("doc_hash").to_pylist(), strict=True))
+    assert hashes["anime:anilist:1"] is None  # still unverified, never claimed fresh
+    assert hashes["movie:tmdb:3"] is not None
+
+
+def test_unverified_vectors_of_another_size_fail_clearly(conn, tmp_path):
+    """A pre-fingerprint matrix from a different model cannot be mixed in."""
+    seed(conn)
+    out = tmp_path / "m.parquet"
+    pq.write_table(pa.table({
+        "item_uid": ["anime:anilist:1"],
+        "domain": ["anime"],
+        "vector": pa.FixedSizeListArray.from_arrays(pa.array(np.ones(4, dtype="float32")), 4),
+    }), out)
+    with pytest.raises(RuntimeError, match="--full"):
+        built(conn, tmp_path, batch_size=1)
+    assert out.is_file()  # the old matrix is untouched
