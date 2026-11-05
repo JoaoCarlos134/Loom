@@ -231,7 +231,9 @@ async def test_a_file_without_the_required_columns_fails_the_run(conn, tmp_path,
 
     result = await MalRatingsLoader(get_settings()).run(conn)
     assert result.status == "error"
+    # Named on every supported Python; 3.14's list.index no longer says which.
     assert "username" in result.error
+    assert "my_score" in result.error
 
 
 def test_resolve_path_rejects_a_missing_file(monkeypatch):

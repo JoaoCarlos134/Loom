@@ -163,15 +163,15 @@ class MalRatingsLoader:
             header = next(reader, None)
             if header is None:
                 return
-            try:
-                u, a, s, t = (
-                    header.index(name)
-                    for name in ("username", "anime_id", "my_score", "my_last_updated")
-                )
-            except ValueError as exc:
+            names = ("username", "anime_id", "my_score", "my_last_updated")
+            # Named explicitly: Python 3.14's list.index error no longer says
+            # which value was missing.
+            missing = [name for name in names if name not in header]
+            if missing:
                 raise ValueError(
-                    f"{path.name} is not a MAL user-list file: {exc}"
-                ) from None
+                    f"{path.name} is not a MAL user-list file: missing {', '.join(missing)}"
+                )
+            u, a, s, t = (header.index(name) for name in names)
 
             for row in reader:
                 read += 1

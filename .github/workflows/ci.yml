@@ -2,19 +2,33 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # Work branches too, so a branch is checked before anything is merged;
+    # workflow_dispatch alone cannot do that until this file is on main.
+    branches: [main, "claude/**"]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   check:
     # Windows: the app targets it, and the suite is only exercised there.
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Every version requires-python admits. The ceiling is <3.15 because
+        # pythonnet (pywebview's Windows backend) and onnxruntime publish no
+        # 3.15 wheels yet.
+        python: ["3.12", "3.13", "3.14"]
+    name: check (Python ${{ matrix.python }})
     env:
       PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
       - run: uv sync --frozen
+      - run: uv run python --version
       - run: uv run pytest -q
       - run: uv run ruff check .
       - run: uv run mypy

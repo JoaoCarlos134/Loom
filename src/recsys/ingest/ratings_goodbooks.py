@@ -122,10 +122,13 @@ class GoodbooksRatingsLoader:
         header = next(reader, None)
         if header is None:
             return
-        try:
-            u, b, r = (header.index(name) for name in ("user_id", "book_id", "rating"))
-        except ValueError as exc:
-            raise ValueError(f"ratings.csv is not a goodbooks ratings file: {exc}") from None
+        names = ("user_id", "book_id", "rating")
+        missing = [name for name in names if name not in header]
+        if missing:
+            raise ValueError(
+                f"ratings.csv is not a goodbooks ratings file: missing {', '.join(missing)}"
+            )
+        u, b, r = (header.index(name) for name in names)
 
         read = 0
         for row in reader:

@@ -103,3 +103,21 @@ def test_is_registered():
     from recsys.ingest.registry import available
 
     assert "book_goodbooks_ratings" in available()
+
+
+def test_a_file_without_the_required_columns_names_them(conn, tmp_path, monkeypatch):
+    """The error says which column is missing on every supported Python.
+
+    3.14 stopped naming the value in ``list.index``'s ValueError, which is what
+    the message used to be built from.
+    """
+    (tmp_path / "books.csv").write_text(
+        (FIXTURE_DIR / "books.csv").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    (tmp_path / "ratings.csv").write_text("user_id,stars\n1,5\n", encoding="utf-8")
+    monkeypatch.setenv("GOODBOOKS_PATH", str(tmp_path))
+    get_settings.cache_clear()
+
+    result = asyncio.run(GoodbooksRatingsLoader(get_settings()).run(conn))
+    assert result.status == "error"
+    assert "book_id" in result.error and "rating" in result.error
