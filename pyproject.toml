@@ -32,6 +32,10 @@ dev = [
     "ruff>=0.16",
     "mypy>=2.3",
 ]
+# Only for building the Windows app folder: uv sync --group package
+package = [
+    "pyinstaller>=6.10",
+]
 
 [build-system]
 requires = ["hatchling"]

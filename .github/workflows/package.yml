@@ -1,0 +1,44 @@
+name: Package
+
+# Builds the Windows app folder (PyInstaller, one folder) and keeps it as a
+# workflow artifact. It publishes nothing: attaching it to a release is a
+# separate, deliberate step.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    env:
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen --group package
+      - run: uv run pyinstaller packaging/loom.spec --noconfirm
+      # The frozen programs must start: loom-data answers --help, and the app
+      # serves /api/health on an empty catalog.
+      - run: dist\Loom\loom-data.exe --help
+      - name: Smoke-test the app server
+        shell: pwsh
+        run: |
+          $env:DATA_DIR = "$env:RUNNER_TEMP\loom-data"
+          $p = Start-Process -FilePath dist\Loom\Loom.exe -ArgumentList "--no-ui","--port","8765" -PassThru
+          $ok = $false
+          foreach ($i in 1..60) {
+            try { $r = Invoke-WebRequest http://127.0.0.1:8765/api/health -UseBasicParsing; if ($r.StatusCode -eq 200) { $ok = $true; break } } catch {}
+            Start-Sleep -Milliseconds 500
+          }
+          Stop-Process -Id $p.Id -Force
+          if (-not $ok) { throw "the frozen app did not answer /api/health" }
+      - run: Compress-Archive -Path dist\Loom -DestinationPath Loom-windows.zip
+        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Loom-windows
+          path: Loom-windows.zip
+          retention-days: 14
