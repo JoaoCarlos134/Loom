@@ -204,11 +204,24 @@ def rebuild_works(
                 unlisted.add(uid)
         n_series_of[head] = len(members) if fold_series else 0
 
+    # A cover any row of the work can lend counts: fill_from_siblings shows it.
+    with_image = {
+        r[0]
+        for r in conn.execute(
+            """SELECT DISTINCT COALESCE(p.item_uid, i.item_uid) FROM items i
+                 LEFT JOIN links l ON l.item_uid = i.item_uid
+                 LEFT JOIN links p ON p.work_uid = l.work_uid AND p.is_primary = 1
+                WHERE i.image_url IS NOT NULL AND i.image_url != ''"""
+        )
+    }
+    browse_rank = _browse_ranks(works, unlisted, with_image)
+
     rows = [
         (
             uid, w["domain"], w["title"], w["sort_key"],
             group_of.get(uid), series_uid_of.get(uid), series_name_of.get(uid),
             positions.get(uid), 0 if uid in unlisted else 1, n_series_of.get(uid),
+            1 if uid in with_image else 0, browse_rank.get(uid),
         )
         for uid, w in works.items()
     ]
@@ -216,8 +229,9 @@ def rebuild_works(
         conn.execute("DELETE FROM works")
         conn.executemany(
             """INSERT INTO works (item_uid, domain, title, sort_key, group_uid,
-                                  series_uid, series_name, series_pos, listed, n_series)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                  series_uid, series_name, series_pos, listed, n_series,
+                                  has_image, browse_rank)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             rows,
         )
 
@@ -247,3 +261,38 @@ def rebuild_works(
     )
     return result
 
+
+
+def _browse_ranks(
+    works: dict[str, sqlite3.Row], unlisted: set[str], with_image: set[str]
+) -> dict[str, int]:
+    """The all-domains listing's order: covers first, domains taking turns.
+
+    Within a domain the calibrated popularity orders works; across domains
+    there is no shared scale -- a Deezer fan count and a MAL member count do
+    not measure one thing -- so each domain's n-th most popular work sits
+    beside every other domain's n-th. A rank, not a percentile: a domain that
+    is a top slice of its medium (goodbooks' ten thousand) is not pushed down
+    for it. Works without an image follow, interleaved the same way.
+    """
+    by_domain: dict[str, list[str]] = defaultdict(list)
+    for uid, w in works.items():
+        if uid not in unlisted:
+            by_domain[w["domain"]].append(uid)
+    position: dict[str, int] = {}
+    for uids in by_domain.values():
+        uids.sort(key=lambda u: (works[u]["sort_key"] is None, -(works[u]["sort_key"] or 0.0),
+                                 works[u]["title"], u))
+        seen_with = seen_without = 0
+        for uid in uids:
+            if uid in with_image:
+                position[uid] = seen_with
+                seen_with += 1
+            else:
+                position[uid] = seen_without
+                seen_without += 1
+    order = sorted(
+        position,
+        key=lambda u: (u not in with_image, position[u], works[u]["domain"], u),
+    )
+    return {uid: n for n, uid in enumerate(order, start=1)}

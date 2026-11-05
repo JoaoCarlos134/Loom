@@ -236,6 +236,19 @@ CREATE INDEX idx_works_group       ON works(group_uid);
 CREATE INDEX idx_works_series      ON works(series_uid);
 """
 
+# The view Loom opens on. All domains were ordered by one calibrated
+# popularity, but calibration only puts the sources of *one* domain on one
+# scale; across domains the largest raw numbers won, and the Browse tab opened
+# on a wall of imageless music. `browse_rank` orders the all-domains listing:
+# works with an image first, domains interleaved by each one's own popularity
+# rank. Emptied, like 8, so reads fall back until the next rebuild fills it.
+MIGRATION_9 = """
+DELETE FROM works;
+ALTER TABLE works ADD COLUMN has_image INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE works ADD COLUMN browse_rank INTEGER;
+CREATE INDEX idx_works_browse ON works(listed, browse_rank);
+"""
+
 # Append new migrations here; never modify an existing entry.
 MIGRATIONS: list[tuple[int, str]] = [
     (1, MIGRATION_1),
@@ -246,6 +259,7 @@ MIGRATIONS: list[tuple[int, str]] = [
     (6, MIGRATION_6),
     (7, MIGRATION_7),
     (8, MIGRATION_8),
+    (9, MIGRATION_9),
 ]
 
 SCHEMA_VERSION = MIGRATIONS[-1][0]
@@ -784,9 +798,14 @@ def query_items(
         if domain:
             params.append(domain)
         tail = " WHERE " + " AND ".join(where) if where else ""
-        # `w.title` rather than `i.title` when it can be: the same value, and
-        # the one the index carries, so the whole ORDER BY is the index's.
-        order = f"ORDER BY {sort} DESC, {'w' if fast else 'i'}.title ASC"
+        if fast and not domain:
+            # All domains have no single popularity order; `browse_rank` is the
+            # one `works.py` chose -- covers first, domains interleaved.
+            order = "ORDER BY w.browse_rank ASC"
+        else:
+            # `w.title` rather than `i.title` when it can be: the same value,
+            # and the one the index carries, so the whole ORDER BY is the index's.
+            order = f"ORDER BY {sort} DESC, {'w' if fast else 'i'}.title ASC"
         # Counted straight off `works`, without touching `items` at all. The
         # page needs the item columns; the count needs one row per card, which
         # is what `works` *is* -- joining back to `items` to count them cost
