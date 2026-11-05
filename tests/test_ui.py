@@ -46,3 +46,11 @@ def test_it_asks_across_domains(app_js):
     """No domain filter on the request: an anime's nearest book is the point."""
     similar_calls = re.findall(r'"/api/similar/"[^;]*;', app_js)
     assert similar_calls and not any("domain=" in call for call in similar_calls)
+
+
+def test_the_tmdb_notice_is_shown_in_the_app():
+    """TMDB's terms require this exact notice where the app credits its sources."""
+    html = (UI / "index.html").read_text(encoding="utf-8")
+    notice = ("This product uses TMDB and the TMDB APIs but is not endorsed, certified, "
+              "or otherwise approved by TMDB.")
+    assert notice in " ".join(html.split())

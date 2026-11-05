@@ -488,3 +488,17 @@ code {
 .mini-meta { font-size: 0.75rem; color: var(--text-dim); }
 .mini:hover .mini-title { text-decoration: underline; }
 .mini:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---- credits ---------------------------------------------------------- */
+
+.credits {
+  padding: 24px var(--gap) 32px;
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1.5;
+  border-top: 1px solid var(--border);
+  max-width: 900px;
+}
+
+.credits p { margin: 0 0 6px; }
+.credits a { color: var(--text-dim); }
