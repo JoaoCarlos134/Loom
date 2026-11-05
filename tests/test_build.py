@@ -73,8 +73,9 @@ def test_a_second_run_resumes_rather_than_repeating(tmp_path):
     make(tmp_path, Fake(fail={"book_openlibrary"})).run()
     again = Fake()
     make(tmp_path, again).run()
-    # Only what failed, plus the cheap derived steps, which check their own freshness.
-    assert again.ran == ["book_openlibrary", "derive", "embed", "cf"]
+    # Only what failed, plus the cheap steps that run every time: TMDB retention,
+    # and the derived steps, which check their own freshness.
+    assert again.ran == ["book_openlibrary", "tmdb_retention", "derive", "embed", "cf"]
 
 
 def test_redo_runs_a_finished_step_again(tmp_path):
@@ -232,3 +233,12 @@ def test_a_failed_collaborative_build_is_never_called_fresh():
     assert cf_is_fresh({"status": "ok", "n_ratings": 10}, model_exists=True, n_ratings=10)
     assert not cf_is_fresh({"status": "ok", "n_ratings": 9}, model_exists=True, n_ratings=10)
     assert not cf_is_fresh({"status": "ok", "n_ratings": 10}, model_exists=False, n_ratings=10)
+
+
+def test_the_tmdb_retention_step_runs_every_build_after_tmdb_and_before_music(tmp_path):
+    make(tmp_path, Fake()).run()
+    again = Fake()
+    make(tmp_path, again).run()
+    assert "tmdb_retention" in again.ran
+    order = [s.name for s in STEPS]
+    assert order.index("tv_tmdb") < order.index("tmdb_retention") < order.index("music_musicbrainz")

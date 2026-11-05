@@ -94,6 +94,16 @@ def run_step(step: Step, *, embed_full: bool, state: State) -> Outcome:
         if code != 0:
             return Outcome("error", f"exit {code}")
         return Outcome("ok", f"{n:,} ratings", {"n_ratings": n})
+    if step.kind == "retention":
+        from recsys.ingest.cache import DiskCache
+        from recsys.prune import expire
+
+        with session() as conn:
+            expired = expire(conn, settings, dry_run=False)
+        days = settings.tmdb_max_age_days
+        purged = DiskCache(settings.cache_dir, "tmdb").purge(days * 86400)
+        return Outcome("ok", f"{expired.deleted:,} TMDB rows and {purged:,} cached TMDB "
+                             f"responses older than {days} days removed")
     raise ValueError(f"unknown step kind {step.kind!r}")
 
 

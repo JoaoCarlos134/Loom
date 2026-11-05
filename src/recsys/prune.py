@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 
 from recsys.log import get_logger
 
@@ -109,13 +110,48 @@ def prune(conn: sqlite3.Connection, settings, *, dry_run: bool = True) -> PruneR
         doomed |= uids
 
     if not dry_run and doomed:
-        with conn:
-            for chunk in (list(doomed)[i : i + 500] for i in range(0, len(doomed), 500)):
-                marks = ",".join("?" * len(chunk))
-                conn.execute(f"DELETE FROM items WHERE item_uid IN ({marks})", chunk)
-        result.deleted = len(doomed)
+        result.deleted = _delete(conn, doomed)
         log.info("prune: removed %d rows", result.deleted)
     else:
         log.info("prune: %d rows would be removed (dry run)", len(doomed))
 
+    return result
+
+
+def _delete(conn: sqlite3.Connection, uids: set[str]) -> int:
+    with conn:
+        for chunk in (list(uids)[i : i + 500] for i in range(0, len(uids), 500)):
+            marks = ",".join("?" * len(chunk))
+            conn.execute(f"DELETE FROM items WHERE item_uid IN ({marks})", chunk)
+    return len(uids)
+
+
+#: Sources whose terms limit how long their data may be stored, and the
+#: setting that holds the limit. TMDB: "you shall not ... cache, for longer
+#: than 6 months, any information obtained through or from TMDB".
+RETENTION = {"tmdb": "tmdb_max_age_days"}
+
+
+def expire(conn: sqlite3.Connection, settings, *, dry_run: bool = True,
+           now: datetime | None = None) -> PruneResult:
+    """Count -- and, unless ``dry_run``, delete -- rows kept longer than their terms allow.
+
+    A refetch only upserts, so it renews the rows the source still lists and
+    leaves the ones it no longer does with their old ``fetched_at`` -- stored on
+    for ever unless something removes them. This does, by age alone. Run after
+    the source has been fetched again; the derived tables are rebuilt after.
+    """
+    result = PruneResult(dry_run=dry_run)
+    doomed: set[str] = set()
+    now = now or datetime.now(UTC)
+    for source, setting in RETENTION.items():
+        days = int(getattr(settings, setting))
+        cutoff = (now - timedelta(days=days)).isoformat()
+        uids = {r[0] for r in conn.execute(
+            "SELECT item_uid FROM items WHERE source = ? AND fetched_at < ?", (source, cutoff))}
+        result.counts[f"{source}: stored longer than {days} days"] = len(uids)
+        doomed |= uids
+    if not dry_run and doomed:
+        result.deleted = _delete(conn, doomed)
+        log.info("expire: removed %d rows kept past their terms", result.deleted)
     return result

@@ -25,7 +25,9 @@ ratings changed.
 
 **TMDB data is kept under six months old.** TMDB's terms forbid storing API
 data for longer, so a TMDB step that succeeded more than ``tmdb_max_age_days``
-ago counts as not done, and the next build fetches it again.
+ago counts as not done, and the next build fetches it again -- and then deletes
+(through ``prune.expire``) the TMDB rows the refetch did not renew, and the
+cached TMDB responses as old.
 """
 
 from __future__ import annotations
@@ -67,6 +69,9 @@ STEPS: tuple[Step, ...] = (
     Step("manga_anilist", "Manga (AniList, 30/min)", 1800),
     Step("movie_tmdb", "Films (TMDB)", 1800, needs="tmdb"),
     Step("tv_tmdb", "Television (TMDB)", 1500, needs="tmdb"),
+    # Straight after TMDB's own steps, so the composers music is built from
+    # are those of what TMDB lists today.
+    Step("tmdb_retention", "Drop TMDB data kept past six months", 10, kind="retention"),
     Step("music_musicbrainz", "Composers (MusicBrainz under 1/s, Deezer)", 9000, needs="tmdb"),
     Step("idmap_wikidata", "Anime <-> TMDB id map (Wikidata)", 15),
     Step("anime_mal_ratings", "19.2M anime ratings (MyAnimeList Kaggle dump)", 90,
@@ -257,7 +262,7 @@ class Build:
         return [
             s for s in STEPS
             if s.name not in skip
-            and (s.name in redo or s.kind in ("embed", "cf", "derive")
+            and (s.name in redo or s.kind in ("embed", "cf", "derive", "retention")
                  or not self.state.done(s, now=now, tmdb_max_age_days=self.tmdb_max_age_days))
         ]
 

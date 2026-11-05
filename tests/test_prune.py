@@ -140,3 +140,33 @@ def test_pruning_an_already_clean_catalog_is_a_noop(conn, settings):
 
 def test_pruning_an_empty_catalog_is_a_noop(conn, settings):
     assert prune(conn, settings, dry_run=False).deleted == 0
+
+
+def test_tmdb_rows_kept_past_six_months_expire_and_nothing_else_does(tmp_path):
+    """TMDB's terms forbid storing its data longer. A refetch renews what TMDB
+    still lists; what it no longer lists keeps its old fetched_at until this."""
+    from datetime import UTC, datetime, timedelta
+
+    from recsys.config import get_settings
+    from recsys.db import connect, init_db, upsert_items
+    from recsys.prune import expire
+    from recsys.schemas import UnifiedItem
+
+    now = datetime(2026, 11, 5, tzinfo=UTC)
+    old, fresh = now - timedelta(days=200), now - timedelta(days=10)
+    init_db(tmp_path / "e.db")
+    conn = connect(tmp_path / "e.db")
+    upsert_items(conn, [
+        UnifiedItem(domain="movie", source="tmdb", source_id="1", title="Gone from TMDB",
+                    fetched_at=old),
+        UnifiedItem(domain="tv", source="tmdb", source_id="2", title="Renewed", fetched_at=fresh),
+        UnifiedItem(domain="anime", source="anilist", source_id="3", title="Not TMDB",
+                    fetched_at=old),
+    ])
+    dry = expire(conn, get_settings(), now=now)
+    assert dry.total == 1 and dry.deleted == 0
+    done = expire(conn, get_settings(), dry_run=False, now=now)
+    assert done.deleted == 1
+    titles = {r[0] for r in conn.execute("SELECT title FROM items")}
+    assert titles == {"Renewed", "Not TMDB"}
+    conn.close()

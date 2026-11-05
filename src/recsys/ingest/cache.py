@@ -75,6 +75,25 @@ class DiskCache:
             Path(tmp).unlink(missing_ok=True)
             raise
 
+    def purge(self, older_than_seconds: float, *, now: float | None = None) -> int:
+        """Delete entries stored longer ago than this. Returns how many.
+
+        An expired entry is never *read* (``get`` treats it as a miss), but it
+        stays on disk -- which, for a source whose terms limit storage, is
+        still storing it.
+        """
+        now = time.time() if now is None else now
+        n = 0
+        for path in self.dir.rglob("*.json"):
+            try:
+                stored = json.loads(path.read_text(encoding="utf-8")).get("stored_at", 0)
+            except (OSError, json.JSONDecodeError):
+                stored = 0
+            if now - stored > older_than_seconds:
+                path.unlink(missing_ok=True)
+                n += 1
+        return n
+
     def clear(self) -> int:
         n = 0
         for p in self.dir.rglob("*.json"):

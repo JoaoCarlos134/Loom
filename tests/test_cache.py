@@ -106,3 +106,23 @@ def test_clear_removes_all_entries_and_returns_count(cache: DiskCache) -> None:
     cache.set(URL + "?page=2", {"b": 2})
     assert cache.clear() == 2
     assert list(cache.dir.rglob("*.json")) == []
+
+
+def test_purge_deletes_only_what_is_older_than_asked(tmp_path):
+    """An expired entry is never read, but it is still stored -- which, for a
+    source whose terms limit storage, is the thing to avoid."""
+    import json
+    import time
+
+    from recsys.ingest.cache import DiskCache
+
+    cache = DiskCache(tmp_path, "tmdb")
+    cache.set("https://example/old", {"x": 1})
+    cache.set("https://example/new", {"x": 2})
+    old = cache.path_for("https://example/old")
+    envelope = json.loads(old.read_text(encoding="utf-8"))
+    envelope["stored_at"] = time.time() - 200 * 86400
+    old.write_text(json.dumps(envelope), encoding="utf-8")
+
+    assert cache.purge(180 * 86400) == 1
+    assert not old.exists() and cache.path_for("https://example/new").exists()
