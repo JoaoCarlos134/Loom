@@ -28,14 +28,15 @@ from recsys.db import (
     init_db,
     session,
 )
+from recsys.derive import rebuild_derived
 from recsys.ingest.base import IngestResult
 from recsys.ingest.registry import available, get_ingester
-from recsys.link import LinkResult, rebuild_links
+from recsys.link import LinkResult
 from recsys.log import get_logger, setup_logging
-from recsys.popularity import PopularityResult, rebuild_popularity
+from recsys.popularity import PopularityResult
 from recsys.prune import prune
-from recsys.relations import RelationResult, rebuild_relations
-from recsys.works import WorksResult, rebuild_works
+from recsys.relations import RelationResult
+from recsys.works import WorksResult
 
 log = get_logger("recsys.bootstrap")
 
@@ -208,16 +209,10 @@ def main(argv: list[str] | None = None) -> int:
     rels: RelationResult | None = None
     if not args.no_link:
         with session() as conn:
-            links = rebuild_links(conn)
-            # Strictly after linking: the calibration anchors are the works
-            # that linking just proved two sources both carry.
-            pops = rebuild_popularity(conn)
-            # Independent of the two above; it reads only stored rows.
-            rels = rebuild_relations(conn)
-            # Strictly after all three: the read view stores what they decided --
-            # which row represents a work, what it sorts by, and which story
-            # (adaptation, franchise, series) it belongs to.
-            works = rebuild_works(conn)
+            derived = rebuild_derived(conn)
+        links, pops, rels, works = (
+            derived.links, derived.popularity, derived.relations, derived.works
+        )
 
     report(results, links, pops, works, rels)
     return 1 if any(r.status != "ok" for r in results) else 0
