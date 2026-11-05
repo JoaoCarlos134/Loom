@@ -11,15 +11,50 @@ books, music, movies and TV — from ten sources including AniList (GraphQL), TM
 Open Library, MusicBrainz, goodbooks-10k and a static MyAnimeList dump. A full
 build is **~84,000 works** from ~105,000 stored rows (84% carrying a real
 synopsis), reconciled across sources and calibrated onto one popularity scale,
-plus **19.2M user ratings**. Two recommendation models are built and served at
+plus **25.2M user ratings** (19.2M anime, 6M books). Two recommendation models are built and served at
 `/api/similar`: content-based text embeddings and item-item collaborative
 filtering. You can rate things yourself, and `/api/recommend` will find works
 nearest your taste **in a domain you have never rated in**. **778 tests**,
 ruff- and mypy-clean.
 
+![Loom's For you tab: books recommended from four anime ratings](docs/screenshots/for-you-books.png)
+
+*Four anime rated, books recommended. Collaborative filtering cannot do this here, because no user
+in the corpus rated across domains; the text embeddings can. The real UI, over a full local build.*
+
+## What's interesting here
+
+- **A cross-domain bridge.** `/api/recommend` turns your ratings into one taste vector in a shared
+  text-embedding space, so rating only anime can surface books. The 19.2M anime and 6M book ratings come
+  from disjoint users, which is exactly why collaborative filtering alone could not.
+- **One popularity scale across sources.** A raw audience count means something different in every
+  source. A binned monotone curve, fitted on works two sources share, brings *Fullmetal Alchemist:
+  Brotherhood*'s 5.1× spread across sources down to 1.48×. Percentile-within-source and a fitted power law
+  were measured and rejected. See [Why these choices](#why-these-choices).
+- **Entity resolution without merging.** Rows that are one work are linked by an exact shared id, and the
+  representative is chosen by content, never by source name, so any source stays removable.
+- **Claims are measured.** Similarity is scored against adaptation links the sources assert, with the
+  pairs whose titles differ reported apart, because a shared title alone makes the headline number easy.
+- **Built to run anywhere.** 778 tests that never touch the network, ruff and mypy clean, CI on Windows,
+  and a setup that needs no admin rights.
+
+## Quick start
+
+```powershell
+git clone https://github.com/JoaoCarlos134/Loom.git
+cd Loom
+uv sync
+copy .env.example .env
+uv run python scripts/bootstrap.py --only book_goodbooks   # 10k books, a few seconds, no credentials
+uv run python app.py
+```
+
+That gives a browsable catalog. The full build (all six domains, the ratings, the embedding matrix) takes
+hours and is described step by step below.
+
 ---
 
-## Setup from zero on a Windows machine without admin rights
+## Full setup on a Windows machine without admin rights
 
 Every step below is user-space. Nothing installs a service, needs an installer, or
 touches `Program Files`.
