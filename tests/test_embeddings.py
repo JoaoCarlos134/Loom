@@ -388,3 +388,42 @@ def test_unverified_vectors_of_another_size_fail_clearly(conn, tmp_path):
     with pytest.raises(RuntimeError, match="--full"):
         built(conn, tmp_path, batch_size=1)
     assert out.is_file()  # the old matrix is untouched
+
+
+
+def test_adopting_a_matrix_from_before_fingerprints_makes_it_checkable(conn, tmp_path):
+    """--adopt is a deliberate claim that old vectors match today's text. After
+    it, a later change to a document is detected like any other."""
+    from recsys.models.text import adopt_fingerprints
+
+    seed(conn)
+    out = tmp_path / "m.parquet"
+    pq.write_table(pa.table({
+        "item_uid": ["anime:anilist:1", "book:goodbooks:2", "movie:tmdb:3"],
+        "domain": ["anime", "book", "movie"],
+        "vector": pa.FixedSizeListArray.from_arrays(
+            pa.array(np.ones(24, dtype="float32") / 8), 8),
+    }), out)
+    assert matrix_freshness(conn, out, model=MODEL).n_unknown == 3
+    assert adopt_fingerprints(conn, out, model=MODEL) == 3
+    assert matrix_freshness(conn, out, model=MODEL).is_fresh
+
+    upsert_items(conn, [item("movie", "tmdb", 3, title="Primer", description="Changed.")])
+    stale = matrix_freshness(conn, out, model=MODEL)
+    assert (stale.n_changed, stale.n_to_embed) == (1, 1)
+
+
+def test_vanished_works_are_dropped_from_a_rebuild(conn, tmp_path):
+    """A work that loses its primary election leaves the matrix."""
+    seed(conn)
+    out, _ = built(conn, tmp_path)
+    assert "book:goodbooks:2" in SimilarityIndex.load(out).uids
+    upsert_items(conn, [item("book", "openlibrary", "2", title="Dark Matter",
+                             description="A physicist wakes.", external_ids={"isbn": "2"}),
+                        item("book", "goodbooks", 2, title="Dark Matter", tags=["thriller"],
+                             external_ids={"isbn": "2"})])
+    rebuild_links(conn)
+    built(conn, tmp_path)
+    uids = set(SimilarityIndex.load(out).uids)
+    assert "book:goodbooks:2" not in uids and "book:openlibrary:2" in uids
+    assert matrix_freshness(conn, out, model=MODEL).n_orphaned == 0

@@ -95,26 +95,48 @@ class Freshness:
         return self.n_changed + self.n_missing
 
 
-def _previous(path: Path) -> dict[str, tuple[str | None, Any]]:
-    """item_uid -> (fingerprint or None, vector) from an existing matrix."""
+def _fingerprints(path: Path) -> dict[str, str | None]:
+    """item_uid -> fingerprint (None for a vector from before fingerprints).
+
+    Reads two columns only: checking freshness never needs the vectors.
+    """
     import pyarrow.parquet as pq
 
     if not Path(path).is_file():
         return {}
-    table = pq.read_table(path)
+    names = pq.read_schema(path).names
+    columns = ["item_uid", "doc_hash"] if "doc_hash" in names else ["item_uid"]
+    table = pq.read_table(path, columns=columns)
     uids = table.column("item_uid").to_pylist()
-    hashes = (
-        table.column("doc_hash").to_pylist()
-        if "doc_hash" in table.column_names
-        else [None] * len(uids)
-    )
-    vectors = table.column("vector").to_pylist()
-    return {u: (h, v) for u, h, v in zip(uids, hashes, vectors, strict=True)}
+    hashes = (table.column("doc_hash").to_pylist() if "doc_hash" in names
+              else [None] * len(uids))
+    return dict(zip(uids, hashes, strict=True))
+
+
+def _previous(path: Path) -> dict[str, tuple[str | None, Any]]:
+    """item_uid -> (fingerprint or None, vector) from an existing matrix.
+
+    Vectors come back as rows of one numpy array, not Python lists: for the
+    full build's 84k x 384 that is half a second instead of eleven, and a
+    tenth of the memory.
+    """
+    import numpy as np
+    import pyarrow.parquet as pq
+
+    if not Path(path).is_file():
+        return {}
+    hashes = _fingerprints(path)
+    table = pq.read_table(path, columns=["item_uid", "vector"])
+    dim = table.schema.field("vector").type.list_size
+    flat = table.column("vector").combine_chunks().flatten().to_numpy(zero_copy_only=False)
+    matrix = np.asarray(flat, dtype="float32").reshape(-1, dim)
+    uids = table.column("item_uid").to_pylist()
+    return {uid: (hashes.get(uid), matrix[i]) for i, uid in enumerate(uids)}
 
 
 def matrix_freshness(conn: sqlite3.Connection, path: Path, *, model: str) -> Freshness:
     """Compare a matrix with what the catalog would embed today. Embeds nothing."""
-    previous = _previous(path)
+    previous = _fingerprints(path)
     result = Freshness()
     seen: set[str] = set()
     for uid, _, document in work_documents(conn):
@@ -123,11 +145,11 @@ def matrix_freshness(conn: sqlite3.Connection, path: Path, *, model: str) -> Fre
         result.n_works += 1
         seen.add(uid)
         old = previous.get(uid)
-        if old is None:
+        if uid not in previous:
             result.n_missing += 1
-        elif old[0] is None:
+        elif old is None:
             result.n_unknown += 1
-        elif old[0] == doc_fingerprint(document, model):
+        elif old == doc_fingerprint(document, model):
             result.n_current += 1
         else:
             result.n_changed += 1
@@ -341,3 +363,38 @@ def build_embeddings(
     log.info("wrote %d x %d vectors to %s (%d embedded, %d reused)",
              result.n_documents, result.dim, out_path, result.n_embedded, result.n_reused)
     return result
+
+
+def adopt_fingerprints(conn: sqlite3.Connection, path: Path, *, model: str) -> int:
+    """Stamp today's fingerprints on vectors from before fingerprints. Returns how many.
+
+    A claim, made deliberately: "these vectors were made from today's
+    documents". Nothing can check it -- that is why such vectors are reported
+    as unverified -- so it is never done implicitly. It is right when the
+    matrix is known current (the full build's was verified so on 2026-08-30)
+    and only the fingerprints are missing; it is wrong after any change to
+    the documents since, which a full rebuild is for.
+    """
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    if not Path(path).is_file():
+        return 0
+    today = {uid: doc_fingerprint(doc, model) for uid, _, doc in work_documents(conn)
+             if doc.strip()}
+    table = pq.read_table(path)
+    uids = table.column("item_uid").to_pylist()
+    old = (table.column("doc_hash").to_pylist() if "doc_hash" in table.column_names
+           else [None] * len(uids))
+    new = [h if h is not None else today.get(u) for u, h in zip(uids, old, strict=True)]
+    adopted = sum(1 for a, b in zip(old, new, strict=True) if a is None and b is not None)
+    out = pa.table({
+        "item_uid": table.column("item_uid"),
+        "domain": table.column("domain"),
+        "vector": table.column("vector"),
+        "doc_hash": pa.array(new, type=pa.string()),
+    })
+    partial = Path(path).with_suffix(Path(path).suffix + ".part")
+    pq.write_table(out, partial, compression="zstd")
+    partial.replace(path)
+    return adopted

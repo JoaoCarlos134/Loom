@@ -146,6 +146,7 @@ def build_pack(
     version: str,
     rebuild_derived,
     build_collaborative=None,
+    model: str = "",
 ) -> PackResult:
     """Copy the shippable rows of ``source_db`` into a new pack. Reads the source only.
 
@@ -209,7 +210,7 @@ def build_pack(
 
     missing = 0
     if embeddings is not None:
-        missing = _filter_matrix(conn, Path(embeddings), stage / EMBEDDINGS)
+        missing = _filter_matrix(conn, Path(embeddings), stage / EMBEDDINGS, model)
     conn.close()
     for sidecar in ("-wal", "-shm"):
         Path(f"{db_path}{sidecar}").unlink(missing_ok=True)
@@ -245,21 +246,32 @@ def build_pack(
     return PackResult(archive=archive, sha256=digest, counts=counts, missing_vectors=missing)
 
 
-def _filter_matrix(conn: sqlite3.Connection, source: Path, out: Path) -> int:
-    """Keep the source matrix's vectors for the pack's works. Returns how many lack one.
+def _filter_matrix(conn: sqlite3.Connection, source: Path, out: Path, model: str) -> int:
+    """Ship the source matrix's vectors for the pack's works. Returns how many lack one.
 
-    The vectors are carried, not recomputed: a book's document is its own rows'
-    text and tags, all from shippable sources, so its vector is too.
+    A vector ships only when its fingerprint matches the document the pack
+    itself would embed for that work: that is what shows it was made from the
+    pack's own -- shareable -- rows and from nothing else in the build it came
+    from. A vector with no fingerprint (from before fingerprints) or another
+    document's does not ship; `embed.py --adopt` or a rebuild settles it.
     """
     import pyarrow as pa
-    import pyarrow.compute as pc
     import pyarrow.parquet as pq
 
-    wanted = [r[0] for r in conn.execute("SELECT item_uid FROM works")]
+    from recsys.models.text import doc_fingerprint, work_documents
+
+    expected = {uid: doc_fingerprint(doc, model) for uid, _, doc in work_documents(conn)
+                if doc.strip()}
     table = pq.read_table(source)
-    kept = table.filter(pc.is_in(table.column("item_uid"), value_set=pa.array(wanted)))
+    if "doc_hash" in table.column_names:
+        keep = [expected.get(u) == h and h is not None for u, h in zip(
+            table.column("item_uid").to_pylist(), table.column("doc_hash").to_pylist(),
+            strict=True)]
+    else:
+        keep = [False] * table.num_rows
+    kept = table.filter(pa.array(keep, type=pa.bool_()))
     pq.write_table(kept, out, compression="zstd")
-    return len(set(wanted) - set(kept.column("item_uid").to_pylist()))
+    return len(set(expected) - set(kept.column("item_uid").to_pylist()))
 
 
 # --------------------------------------------------------------------------

@@ -66,6 +66,7 @@ def main(argv: list[str] | None = None) -> int:
         version=args.version,
         rebuild_derived=rebuild_derived,
         build_collaborative=lambda conn, out: build_collaborative(conn, out_path=out),
+        model=get_settings().embedding_model,
     )
     size = result.archive.stat().st_size / 1e6
     print(f"\n  archive : {result.archive} ({size:.1f} MB)")
@@ -73,7 +74,9 @@ def main(argv: list[str] | None = None) -> int:
     for name, n in sorted(result.counts.items()):
         print(f"  {name:<18} {n:,}")
     if result.missing_vectors:
-        print(f"  !! {result.missing_vectors} works have no vector; rebuild the matrix first")
+        print(f"  !! {result.missing_vectors:,} works ship without a vector: none whose "
+              "fingerprint matches its document. If the matrix is current but predates "
+              "fingerprints, run scripts/embed.py --adopt; otherwise scripts/embed.py.")
     print("\nPin it: STARTER_SHA256=" + result.sha256)
     return 0
 

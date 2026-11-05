@@ -49,7 +49,14 @@ SOURCE_ROWS = [
 ]
 
 
-def write_matrix(path, uids):
+MODEL = "fake/model"
+
+
+def write_matrix(path, docs):
+    """A matrix fingerprinted as the real build writes it; ``docs`` uid -> document."""
+    from recsys.models.text import doc_fingerprint
+
+    uids = list(docs)
     rng = np.random.default_rng(0)
     block = rng.normal(size=(len(uids), 4)).astype("float32")
     block /= np.linalg.norm(block, axis=1, keepdims=True)
@@ -57,6 +64,7 @@ def write_matrix(path, uids):
     pq.write_table(pa.table({
         "item_uid": uids, "domain": [u.split(":")[0] for u in uids],
         "vector": pa.FixedSizeListArray.from_arrays(pa.array(block.reshape(-1)), 4),
+        "doc_hash": [doc_fingerprint(docs[u], MODEL) for u in uids],
     }), path)
 
 
@@ -73,9 +81,11 @@ def source(tmp_path):
         for u in range(1, 6) for b, r in ((1, 8), (2, 6 + u % 2), (3, 4))
     ] + [("mal:someone", "anime:mal:9253", 9.0, None)])
     set_rating(conn, "book:goodbooks:2", 10)  # yours: must never ship
-    works = [r[0] for r in conn.execute("SELECT item_uid FROM works")]
+    from recsys.models.text import work_documents
+
+    docs = {uid: doc for uid, _, doc in work_documents(conn)}
     conn.close()
-    write_matrix(tmp_path / "full" / "features" / "embeddings.parquet", works)
+    write_matrix(tmp_path / "full" / "features" / "embeddings.parquet", docs)
     return tmp_path / "full"
 
 
@@ -91,7 +101,7 @@ def pack(source, tmp_path):
     result = build_pack(
         source / "recsys.db", embeddings=source / "features" / "embeddings.parquet",
         out_dir=tmp_path / "out", version="test", rebuild_derived=rebuild_derived,
-        build_collaborative=cf,
+        build_collaborative=cf, model=MODEL,
     )
     assert sha256_of(source / "recsys.db") == before  # the source was only read
     return result
@@ -396,3 +406,30 @@ def test_the_attribution_says_what_was_changed_and_where_covers_come_from(pack, 
     text = (unpacked(pack, tmp_path) / "ATTRIBUTION.md").read_text(encoding="utf-8")
     assert "Changes made" in text
     assert "images.gr-assets.com" in text and "covers.openlibrary.org" in text
+
+
+
+def test_a_vector_ships_only_if_it_was_made_from_the_packs_own_document(source, tmp_path):
+    """A vector without a fingerprint, or with another document's, could have
+    been made from text the pack may not carry; it stays behind."""
+    from recsys.models.text import doc_fingerprint
+
+    path = source / "features" / "embeddings.parquet"
+    table = pq.read_table(path)
+    hashes = table.column("doc_hash").to_pylist()
+    uids = table.column("item_uid").to_pylist()
+    changed = [doc_fingerprint("some other text", MODEL) if u == "book:goodbooks:2"
+               else (None if u == "book:goodbooks:3" else h)
+               for u, h in zip(uids, hashes, strict=True)]
+    pq.write_table(table.drop(["doc_hash"]).append_column("doc_hash", pa.array(changed)), path)
+
+    result = build_pack(
+        source / "recsys.db", embeddings=path, out_dir=tmp_path / "out2", version="t2",
+        rebuild_derived=rebuild_derived, build_collaborative=cf, model=MODEL,
+    )
+    with zipfile.ZipFile(result.archive) as zf:
+        zf.extract("features/embeddings.parquet", tmp_path / "x")
+    shipped = set(pq.read_table(tmp_path / "x" / "features" / "embeddings.parquet")
+                  .column("item_uid").to_pylist())
+    assert "book:goodbooks:2" not in shipped and "book:goodbooks:3" not in shipped
+    assert result.missing_vectors == 2

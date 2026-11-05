@@ -35,7 +35,12 @@ if SRC.is_dir() and str(SRC) not in sys.path:
 from recsys.config import get_settings
 from recsys.db import session
 from recsys.log import get_logger, setup_logging
-from recsys.models.text import Freshness, build_embeddings, matrix_freshness
+from recsys.models.text import (
+    Freshness,
+    adopt_fingerprints,
+    build_embeddings,
+    matrix_freshness,
+)
 from recsys.net import enable_os_truststore
 
 log = get_logger("recsys.embed")
@@ -131,6 +136,9 @@ def main(argv: list[str] | None = None) -> int:
                              "nothing; exit 1 if anything is stale")
     parser.add_argument("--full", action="store_true",
                         help="embed every work again instead of only what changed")
+    parser.add_argument("--adopt", action="store_true",
+                        help="declare a matrix from before fingerprints current: stamp "
+                             "today's fingerprints on its vectors, embed nothing")
     args = parser.parse_args(argv)
 
     setup_logging()
@@ -140,17 +148,30 @@ def main(argv: list[str] | None = None) -> int:
     if args.evaluate:
         return evaluate(settings)
 
+    if args.adopt:
+        with session() as conn:
+            n = adopt_fingerprints(conn, settings.embeddings_path,
+                                   model=settings.embedding_model)
+        print(f"adopted {n:,} vectors as made from today's documents")
+
     with session() as conn:
         fresh = matrix_freshness(conn, settings.embeddings_path,
                                  model=settings.embedding_model)
     print(describe(fresh))
+    if args.adopt:
+        return 0
     if args.check:
         return 0 if fresh.is_fresh else 1
     if fresh.is_fresh and not args.full:
         return 0
 
     total = fresh.n_works if args.full else fresh.n_to_embed
-    embedder = with_progress(make_embedder(settings), total)
+
+    def nothing_to_embed(texts):
+        raise AssertionError("no document should need embedding")
+
+    # Only orphans to drop: rewrite the matrix without loading the model.
+    embedder = with_progress(make_embedder(settings), total) if total else nothing_to_embed
     with session() as conn:
         result = build_embeddings(
             conn,
