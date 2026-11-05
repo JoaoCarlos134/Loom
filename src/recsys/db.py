@@ -626,19 +626,42 @@ def _works_built(conn: sqlite3.Connection) -> bool:
     return bool(conn.execute("SELECT EXISTS(SELECT 1 FROM works)").fetchone()[0] == 1)
 
 
-def build_fts_query(q: str) -> str | None:
+#: Reciprocal rank fusion's constant (Cormack, Clarke & Buettcher, SIGIR 2009):
+#: a result's score is the sum of 1 / (k + rank) over the rankings fused. It
+#: needs no shared scale between them -- bm25 and an audience count have none --
+#: and k = 60 is the value that paper found robust, not one tuned here.
+RRF_K = 60
+
+#: How well a match fits the words typed, as a ranking. Search used bm25 over
+#: title, alt titles and description, and bm25 rewards repetition: a special
+#: whose synopsis says "Steins;Gate" three times outranked the series. A
+#: title-only bm25 does not escape it either -- FTS5 normalises by the whole
+#: row's length, so a short blurb still lifts a title. So: works whose *title*
+#: holds every word typed come first, the fewer other words the better (an
+#: exact title is the work being asked for); matches that touch no title
+#: follow, ordered by bm25 over the whole document (lower is better).
+_TEXT_ORDER = (
+    "ORDER BY in_title DESC, CASE WHEN in_title THEN words ELSE 0 END, "
+    "CASE WHEN in_title THEN 0 ELSE score END"
+)
+
+
+def build_fts_query(q: str, column: str | None = None) -> str | None:
     """Turn free user text into a safe FTS5 MATCH expression.
 
     User input never reaches FTS5 as syntax: every token is quoted as a string
     literal, so ``AND`` / ``*`` / ``"`` / ``NEAR`` typed in the search box are
     treated as ordinary words. The final token gets a prefix wildcard so
-    as-you-type search matches partial words.
+    as-you-type search matches partial words. ``column`` confines every token
+    to one column; it is a name from this module, never user input.
     """
     tokens = _TOKEN_RE.findall(q or "")
     if not tokens:
         return None
     quoted = [f'"{t}"' for t in tokens[:-1]]
     quoted.append(f'"{tokens[-1]}"*')
+    if column is not None:
+        quoted = [f"{column} : {t}" for t in quoted]
     return " ".join(quoted)  # FTS5's default operator is AND
 
 
@@ -652,10 +675,14 @@ def query_items(
 ) -> tuple[int, list[UnifiedItem]]:
     """Return (total_matching, page_of_items).
 
-    With ``q``, the FTS index drives the query and results are bm25-ranked with
-    title weighted above alt_titles above description. Without ``q``, results
-    are ordered by `recsys.popularity`'s cross-source calibrated popularity,
-    falling back to the raw count where nothing has been calibrated.
+    With ``q``, the FTS index drives the query and two rankings are fused by
+    reciprocal rank: how well the title matches (the document, when no title
+    does) and the calibrated popularity. Neither alone is right -- bm25 puts a
+    special above its series, popularity alone ignores what was typed -- and
+    the fusion is scale-free, so no weight between them has to be invented.
+    Without ``q``, results are ordered by `recsys.popularity`'s cross-source
+    calibrated popularity, falling back to the raw count where nothing has
+    been calibrated.
 
     One row per *work*: where several sources describe the same thing, only the
     row `link.py` marked primary is returned. Use :func:`get_item` to reach a
@@ -693,36 +720,51 @@ def query_items(
             params.append(domain)
         tail = " AND " + " AND ".join(where) if where else ""
         series = "w.series_uid" if fast else "NULL"
-        # One pass over the matches: the best match of each series kept, and
-        # the total counted by a window over the same rows rather than by a
-        # second scan -- every keystroke of as-you-type search pays for this.
-        # Only series volumes go through the partitioning window; everything
-        # else is its own card already. `rid` closes every tie, so paging is
-        # stable.
+        # Calibrated popularity only: `works.sort_key` is `popularity_norm`'s
+        # value, and the fallback reads that table directly. Raw counts mean
+        # something different in every source and never rank anything.
+        pop = "w.sort_key" if fast else "pn.value"
+        # One pass over the matches. Each series keeps its best match, then two
+        # rankings are fused by reciprocal rank (see `RRF_K`), and the total is
+        # a window over the same rows rather than a second scan -- every
+        # keystroke of as-you-type search pays for this. The page is cut before
+        # the join, so only its rows are read back from `items`. `rid` closes
+        # every tie, so paging is stable.
+        words = "length(trim(i.title)) - length(replace(trim(i.title), ' ', '')) + 1"
         rows = conn.execute(
-            f"""WITH matched AS (
-                    SELECT i.rowid AS rid, {series} AS series, {sort} AS pop,
+            f"""WITH titled AS (
+                    SELECT rowid FROM items_fts WHERE items_fts MATCH ?),
+                matched AS (
+                    SELECT i.rowid AS rid, {series} AS series, {pop} AS pop,
+                           i.rowid IN (SELECT rowid FROM titled) AS in_title,
+                           {words} AS words,
                            bm25(items_fts, 10.0, 4.0, 1.0) AS score
                       FROM items_fts f JOIN items i ON i.rowid = f.rowid {joins}
                      WHERE items_fts MATCH ?{tail}),
                 best AS (
-                    SELECT rid, score, pop FROM matched WHERE series IS NULL
+                    SELECT rid, pop, in_title, words, score FROM matched
+                     WHERE series IS NULL
                     UNION ALL
-                    SELECT rid, score, pop FROM (
-                        SELECT rid, score, pop, ROW_NUMBER() OVER (
-                                   PARTITION BY series ORDER BY score, pop DESC, rid) AS rn
+                    SELECT rid, pop, in_title, words, score FROM (
+                        SELECT rid, pop, in_title, words, score, ROW_NUMBER() OVER (
+                                   PARTITION BY series {_TEXT_ORDER}, rid) AS rn
                           FROM matched WHERE series IS NOT NULL)
                      WHERE rn = 1),
+                ranked AS (
+                    SELECT rid, pop,
+                           RANK() OVER ({_TEXT_ORDER}) AS text_rank,
+                           RANK() OVER (ORDER BY pop DESC NULLS LAST) AS pop_rank,
+                           COUNT(*) OVER () AS total
+                      FROM best),
                 page AS (
-                    -- Ordered and cut *before* the join, so only the page's
-                    -- rows are read back from `items`; the window still sees
-                    -- every card, because windows run before LIMIT.
-                    SELECT rid, score, pop, COUNT(*) OVER () AS total FROM best
-                     ORDER BY score, pop DESC, rid LIMIT ? OFFSET ?)
+                    SELECT rid, pop, total,
+                           1.0 / ({RRF_K} + text_rank) + 1.0 / ({RRF_K} + pop_rank) AS fused
+                      FROM ranked
+                     ORDER BY fused DESC, pop DESC NULLS LAST, rid LIMIT ? OFFSET ?)
                 SELECT {_SELECT_COLS}, p.total AS total FROM page p
                   JOIN items i ON i.rowid = p.rid
-                 ORDER BY p.score, p.pop DESC, p.rid""",
-            [*params, limit, offset],
+                 ORDER BY p.fused DESC, p.pop DESC NULLS LAST, p.rid""",
+            [build_fts_query(q or "", column="title"), *params, limit, offset],
         ).fetchall()
         if rows:
             total = rows[0]["total"]
