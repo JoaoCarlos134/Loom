@@ -813,14 +813,15 @@ def query_items(
                      WHERE series IS NULL
                     UNION ALL
                     -- A series' best match: an exact title, then a single
-                    -- volume over a boxed set, then the text, then the more
-                    -- read volume.
+                    -- volume over a boxed set, then a volume whose title holds
+                    -- the words, then the more read volume. Not the shorter
+                    -- title: every volume's title carries the series' name,
+                    -- and a word's difference between them means nothing.
                     SELECT rid, dom, pop, in_title, exact, words, score FROM (
                         SELECT rid, dom, pop, in_title, exact, words, score, ROW_NUMBER() OVER (
                                    PARTITION BY series ORDER BY exact DESC, coll,
-                                   in_title DESC, CASE WHEN in_title THEN words ELSE 0 END,
-                                   CASE WHEN in_title THEN 0 ELSE score END,
-                                   pop DESC NULLS LAST, rid) AS rn
+                                   in_title DESC, pop DESC NULLS LAST,
+                                   CASE WHEN in_title THEN 0 ELSE score END, rid) AS rn
                           FROM matched WHERE series IS NOT NULL)
                      WHERE rn = 1),
                 ranked AS (

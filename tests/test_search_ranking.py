@@ -254,8 +254,14 @@ def test_a_series_is_found_by_its_single_volume_not_its_boxed_set(tmp_path):
         book(1, "Harry Potter Boxset (Harry Potter, #1-7)", 190_000),
         book(2, "Harry Potter and the Sorcerer's Stone (Harry Potter, #1)", 4_600_000),
         book(3, "Harry Potter and the Chamber of Secrets (Harry Potter, #2)", 1_800_000),
+        # One token shorter than Sorcerer's Stone: every volume's title holds
+        # the series' name, so a word's difference says nothing here.
+        book(7, "Harry Potter and the Deathly Hallows (Harry Potter, #7)", 1_700_000),
     ])
     assert titles(c, "harry potter") == [
         "Harry Potter and the Sorcerer's Stone (Harry Potter, #1)",
+    ]
+    assert titles(c, "deathly hallows") == [
+        "Harry Potter and the Deathly Hallows (Harry Potter, #7)",
     ]
     c.close()
