@@ -94,10 +94,18 @@ def test_the_two_series_lead_a_fullmetal_alchemist_search(conn):
     assert set(got[:2]) == {"Fullmetal Alchemist", "Fullmetal Alchemist: Brotherhood"}
 
 
-def test_brotherhood_is_first_when_the_rankings_disagree_evenly(conn):
-    """FMA (2003) matches the query more exactly and Brotherhood is more
-    popular: one first place each. The tie goes to popularity."""
-    assert titles(conn, "Fullmetal Alchemist")[0] == "Fullmetal Alchemist: Brotherhood"
+def test_an_exact_title_leads_and_the_popular_series_follows(conn):
+    """"Fullmetal Alchemist" *is* the 2003 series' title, so it leads; the more
+    popular Brotherhood is next, above every special that says the words more."""
+    assert titles(conn, "Fullmetal Alchemist")[:2] == [
+        "Fullmetal Alchemist", "Fullmetal Alchemist: Brotherhood",
+    ]
+
+
+def test_with_no_exact_title_the_tie_goes_to_popularity(conn):
+    """Typed half way, neither series is the query: FMA (2003) fits the words
+    more closely and Brotherhood is more popular, one first place each."""
+    assert titles(conn, "Fullmetal Alch")[0] == "Fullmetal Alchemist: Brotherhood"
 
 
 def test_the_series_leads_its_own_specials(conn):
@@ -159,3 +167,95 @@ def test_a_match_only_in_alternative_titles_is_still_found(conn):
         update={"alt_titles": ["Shingeki no Kyojin"]})])
     rebuild_works(conn)
     assert titles(conn, "Shingeki no Kyojin") == ["Attack on Titan"]
+
+
+
+def built(tmp_path, rows):
+    path = tmp_path / "case.db"
+    init_db(path)
+    c = connect(path)
+    upsert_items(c, [*rows, *FILLER])
+    rebuild_links(c)
+    rebuild_popularity(c)
+    rebuild_relations(c)
+    rebuild_works(c)
+    return c
+
+
+def test_an_exact_title_beats_a_more_popular_prefix_match(tmp_path):
+    """"gate" is GATE, not Gatekeeper -- however many more people know the latter."""
+    c = built(tmp_path, [anime(1, "GATE", 50_000), anime(2, "Gatekeeper", 5_000_000),
+                         anime(3, "Gatchaman", 900_000)])
+    assert titles(c, "gate")[0] == "GATE"
+    c.close()
+
+
+def test_punctuation_splits_words_the_way_the_index_does(tmp_path):
+    """"Steins;Gate" is two words, as FTS5 reads it; counting spaces made it one
+    and put it above "Gate" for the query "gate"."""
+    c = built(tmp_path, [anime(1, "Steins;Gate", 2_500_000), anime(2, "Gate", 10_000)])
+    assert titles(c, "gate") == ["Gate", "Steins;Gate"]
+    c.close()
+
+
+def test_fewer_title_words_rank_better_when_nothing_is_exact(tmp_path):
+    """No title is "fate zer"; the shortest one holding both words fits best.
+    Without the word count all three tie on text and popularity alone orders
+    them C, B, A."""
+    c = built(tmp_path, [
+        anime(1, "Fate/Zero", 300_000),
+        anime(2, "Fate/Zero Specials", 600_000),
+        anime(3, "Fate/Zero Remix Recap Collection Box", 900_000),
+    ])
+    got = titles(c, "fate zer")
+    assert got.index("Fate/Zero") < got.index("Fate/Zero Specials")
+    c.close()
+
+
+def test_popularity_is_ranked_within_each_domain(tmp_path):
+    """Three composers whose Deezer fan counts dwarf any anime's MAL members,
+    and one anime: compared on one scale the anime would rank last for
+    nothing but the size of another service's numbers."""
+    c = built(tmp_path, [
+        anime(1, "Gat Show", 1_000),
+        *[UnifiedItem(domain="music", source="mb", source_id=str(n), title=f"Gat Band{n}",
+                      popularity=float(9e9 - n)) for n in range(3)],
+    ])
+    assert "Gat Show" in titles(c, "gat")[:2]
+    c.close()
+
+
+def test_without_the_read_view_search_still_uses_calibrated_popularity(tmp_path):
+    """The fallback reads popularity_norm, not the raw count."""
+    path = tmp_path / "fallback.db"
+    init_db(path)
+    c = connect(path)
+    other = UnifiedItem(domain="anime", source="other", source_id="2", title="Monster",
+                        popularity=1_000.0)
+    upsert_items(c, [anime(1, "Monster", 10_000_000), other])
+    rebuild_links(c)
+    rebuild_popularity(c)
+    with c:
+        c.execute("UPDATE popularity_norm SET value = 10 WHERE item_uid = 'anime:anilist:1'")
+        c.execute("UPDATE popularity_norm SET value = 5000 WHERE item_uid = 'anime:other:2'")
+        c.execute("DELETE FROM works")
+    assert [i.item_uid for i in query_items(c, q="Monster")[1]][0] == "anime:other:2"
+    c.close()
+
+
+def test_a_series_is_found_by_its_single_volume_not_its_boxed_set(tmp_path):
+    from recsys.schemas import Creator
+
+    def book(n, title, pop):
+        return UnifiedItem(domain="book", source="goodbooks", source_id=str(n), title=title,
+                           popularity=float(pop), creators=[Creator(name="J.K. Rowling")])
+
+    c = built(tmp_path, [
+        book(1, "Harry Potter Boxset (Harry Potter, #1-7)", 190_000),
+        book(2, "Harry Potter and the Sorcerer's Stone (Harry Potter, #1)", 4_600_000),
+        book(3, "Harry Potter and the Chamber of Secrets (Harry Potter, #2)", 1_800_000),
+    ])
+    assert titles(c, "harry potter") == [
+        "Harry Potter and the Sorcerer's Stone (Harry Potter, #1)",
+    ]
+    c.close()

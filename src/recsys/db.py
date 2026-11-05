@@ -249,6 +249,22 @@ ALTER TABLE works ADD COLUMN browse_rank INTEGER;
 CREATE INDEX idx_works_browse ON works(listed, browse_rank);
 """
 
+# What search needs to know about a title, computed once at rebuild rather than
+# guessed per query. `title_tokens` counts words the way FTS5 does ("Steins;Gate"
+# is two, which counting spaces made one); `title_key` and `alt_keys` are the
+# title and alternative titles normalised the same way, so "the title *is* what
+# was typed" is an equality test. `is_collection` marks boxed sets, which a
+# series' search hit should not be. `idx_works_sort` is dropped: since the
+# all-domains listing orders by `browse_rank`, no query reads it.
+MIGRATION_10 = """
+DELETE FROM works;
+ALTER TABLE works ADD COLUMN title_tokens INTEGER;
+ALTER TABLE works ADD COLUMN title_key TEXT;
+ALTER TABLE works ADD COLUMN alt_keys TEXT;
+ALTER TABLE works ADD COLUMN is_collection INTEGER NOT NULL DEFAULT 0;
+DROP INDEX idx_works_sort;
+"""
+
 # Append new migrations here; never modify an existing entry.
 MIGRATIONS: list[tuple[int, str]] = [
     (1, MIGRATION_1),
@@ -260,6 +276,7 @@ MIGRATIONS: list[tuple[int, str]] = [
     (7, MIGRATION_7),
     (8, MIGRATION_8),
     (9, MIGRATION_9),
+    (10, MIGRATION_10),
 ]
 
 SCHEMA_VERSION = MIGRATIONS[-1][0]
@@ -651,13 +668,34 @@ RRF_K = 60
 #: whose synopsis says "Steins;Gate" three times outranked the series. A
 #: title-only bm25 does not escape it either -- FTS5 normalises by the whole
 #: row's length, so a short blurb still lifts a title. So: works whose *title*
-#: holds every word typed come first, the fewer other words the better (an
-#: exact title is the work being asked for); matches that touch no title
-#: follow, ordered by bm25 over the whole document (lower is better).
+#: holds every word typed come first, the fewer words the title has the better;
+#: matches that touch no title follow, ordered by bm25 over the whole document
+#: (lower is better). A dense rank, so a crowd of slightly shorter titles costs
+#: a popular work one place, not one place per title.
 _TEXT_ORDER = (
     "ORDER BY in_title DESC, CASE WHEN in_title THEN words ELSE 0 END, "
     "CASE WHEN in_title THEN 0 ELSE score END"
 )
+
+
+def title_tokens(text: str | None) -> list[str]:
+    """A title as FTS5's tokenizer sees it: lower case, no diacritics, words only.
+
+    ``unicode61 remove_diacritics 2`` folds case and strips accents, and splits
+    on anything that is not a letter or digit -- so "Steins;Gate" is two words
+    and "Pokémon" matches "pokemon". The same here, so a title can be compared
+    with what was typed.
+    """
+    import unicodedata
+
+    folded = unicodedata.normalize("NFKD", (text or "").casefold())
+    stripped = "".join(c for c in folded if not unicodedata.combining(c))
+    return _TOKEN_RE.findall(stripped)
+
+
+def title_key(text: str | None) -> str:
+    """``title_tokens`` joined: equal keys mean the same title, typed any way."""
+    return " ".join(title_tokens(text))
 
 
 def build_fts_query(q: str, column: str | None = None) -> str | None:
@@ -689,14 +727,18 @@ def query_items(
 ) -> tuple[int, list[UnifiedItem]]:
     """Return (total_matching, page_of_items).
 
-    With ``q``, the FTS index drives the query and two rankings are fused by
-    reciprocal rank: how well the title matches (the document, when no title
-    does) and the calibrated popularity. Neither alone is right -- bm25 puts a
-    special above its series, popularity alone ignores what was typed -- and
-    the fusion is scale-free, so no weight between them has to be invented.
-    Without ``q``, results are ordered by `recsys.popularity`'s cross-source
-    calibrated popularity, falling back to the raw count where nothing has
-    been calibrated.
+    With ``q``, the FTS index drives the query. A work whose title (or an
+    alternative title) *is* what was typed leads; everything else is ordered
+    by two rankings fused by reciprocal rank -- how well the title matches (the
+    document, when no title does), and the calibrated popularity ranked within
+    each domain. Neither alone is right: bm25 puts a special above its series,
+    popularity alone ignores what was typed. The fusion is scale-free, so no
+    weight between them has to be invented; ties go to the more popular.
+
+    Without ``q`` and with a ``domain``, works are ordered by that domain's
+    calibrated popularity. Without either, by the all-domains order
+    ``works.py`` chose: works with a cover first, domains interleaved by each
+    one's own popularity rank.
 
     One row per *work*: where several sources describe the same thing, only the
     row `link.py` marked primary is returned. Use :func:`get_item` to reach a
@@ -734,51 +776,71 @@ def query_items(
             params.append(domain)
         tail = " AND " + " AND ".join(where) if where else ""
         series = "w.series_uid" if fast else "NULL"
-        # Calibrated popularity only: `works.sort_key` is `popularity_norm`'s
-        # value, and the fallback reads that table directly. Raw counts mean
-        # something different in every source and never rank anything.
-        pop = "w.sort_key" if fast else "pn.value"
+        # Calibrated popularity: `popularity_norm`'s value, which `works.sort_key`
+        # carries wherever one exists (a row with no audience count at all is
+        # NULL either way, never a raw 0 outranking it). Ranked *within* each
+        # domain: calibration puts one domain's sources on one scale, and a
+        # Deezer fan count is not comparable with a MAL member count.
+        pop = "CASE WHEN w.sort_key > 0 THEN w.sort_key END" if fast else "pn.value"
+        dom = "w.domain" if fast else "i.domain"
+        # The title as FTS5 sees it, from `works` when it is built.
+        words = "w.title_tokens" if fast else (
+            "length(trim(i.title)) - length(replace(trim(i.title), ' ', '')) + 1"
+        )
+        key = title_key(q)
+        exact = (
+            "(w.title_key = ? OR instr(w.alt_keys, ?) > 0)" if fast else "(0 AND ? AND ?)"
+        )
+        collection = "w.is_collection" if fast else "0"
         # One pass over the matches. Each series keeps its best match, then two
         # rankings are fused by reciprocal rank (see `RRF_K`), and the total is
         # a window over the same rows rather than a second scan -- every
         # keystroke of as-you-type search pays for this. The page is cut before
         # the join, so only its rows are read back from `items`. `rid` closes
         # every tie, so paging is stable.
-        words = "length(trim(i.title)) - length(replace(trim(i.title), ' ', '')) + 1"
         rows = conn.execute(
             f"""WITH titled AS (
                     SELECT rowid FROM items_fts WHERE items_fts MATCH ?),
                 matched AS (
-                    SELECT i.rowid AS rid, {series} AS series, {pop} AS pop,
+                    SELECT i.rowid AS rid, {series} AS series, {dom} AS dom, {pop} AS pop,
                            i.rowid IN (SELECT rowid FROM titled) AS in_title,
-                           {words} AS words,
+                           {exact} AS exact, {words} AS words, {collection} AS coll,
                            bm25(items_fts, 10.0, 4.0, 1.0) AS score
                       FROM items_fts f JOIN items i ON i.rowid = f.rowid {joins}
                      WHERE items_fts MATCH ?{tail}),
                 best AS (
-                    SELECT rid, pop, in_title, words, score FROM matched
+                    SELECT rid, dom, pop, in_title, exact, words, score FROM matched
                      WHERE series IS NULL
                     UNION ALL
-                    SELECT rid, pop, in_title, words, score FROM (
-                        SELECT rid, pop, in_title, words, score, ROW_NUMBER() OVER (
-                                   PARTITION BY series {_TEXT_ORDER}, rid) AS rn
+                    -- A series' best match: an exact title, then a single
+                    -- volume over a boxed set, then the text, then the more
+                    -- read volume.
+                    SELECT rid, dom, pop, in_title, exact, words, score FROM (
+                        SELECT rid, dom, pop, in_title, exact, words, score, ROW_NUMBER() OVER (
+                                   PARTITION BY series ORDER BY exact DESC, coll,
+                                   in_title DESC, CASE WHEN in_title THEN words ELSE 0 END,
+                                   CASE WHEN in_title THEN 0 ELSE score END,
+                                   pop DESC NULLS LAST, rid) AS rn
                           FROM matched WHERE series IS NOT NULL)
                      WHERE rn = 1),
                 ranked AS (
-                    SELECT rid, pop,
-                           RANK() OVER ({_TEXT_ORDER}) AS text_rank,
-                           RANK() OVER (ORDER BY pop DESC NULLS LAST) AS pop_rank,
+                    SELECT rid, pop, exact,
+                           DENSE_RANK() OVER ({_TEXT_ORDER}) AS text_rank,
+                           RANK() OVER (PARTITION BY dom ORDER BY pop DESC NULLS LAST)
+                               AS pop_rank,
                            COUNT(*) OVER () AS total
                       FROM best),
                 page AS (
-                    SELECT rid, pop, total,
+                    SELECT rid, pop, exact, total, text_rank, pop_rank,
                            1.0 / ({RRF_K} + text_rank) + 1.0 / ({RRF_K} + pop_rank) AS fused
                       FROM ranked
-                     ORDER BY fused DESC, pop DESC NULLS LAST, rid LIMIT ? OFFSET ?)
+                     ORDER BY exact DESC, fused DESC, pop_rank, text_rank, rid
+                     LIMIT ? OFFSET ?)
                 SELECT {_SELECT_COLS}, p.total AS total FROM page p
                   JOIN items i ON i.rowid = p.rid
-                 ORDER BY p.fused DESC, p.pop DESC NULLS LAST, p.rid""",
-            [build_fts_query(q or "", column="title"), *params, limit, offset],
+                 ORDER BY p.exact DESC, p.fused DESC, p.pop_rank, p.text_rank, p.rid""",
+            [build_fts_query(q or "", column="title"), key, f"|{key}|", *params,
+             limit, offset],
         ).fetchall()
         if rows:
             total = rows[0]["total"]

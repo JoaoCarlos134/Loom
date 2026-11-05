@@ -29,10 +29,12 @@ linked still lists.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections import defaultdict
 from dataclasses import dataclass, field
 
+from recsys.db import title_key, title_tokens
 from recsys.log import get_logger
 from recsys.relations import GROUP_RELATIONS, SERIES_RELATION, series_of
 
@@ -121,7 +123,7 @@ def rebuild_works(
     works = {
         r["item_uid"]: r
         for r in conn.execute(
-            """SELECT i.item_uid, i.domain, i.title,
+            """SELECT i.item_uid, i.domain, i.title, i.alt_titles,
                       COALESCE(pn.value, i.popularity) AS sort_key
                  FROM items i
                  LEFT JOIN links l ON l.item_uid = i.item_uid
@@ -222,6 +224,8 @@ def rebuild_works(
             group_of.get(uid), series_uid_of.get(uid), series_name_of.get(uid),
             positions.get(uid), 0 if uid in unlisted else 1, n_series_of.get(uid),
             1 if uid in with_image else 0, browse_rank.get(uid),
+            len(title_tokens(w["title"])), title_key(w["title"]), _alt_keys(w["alt_titles"]),
+            1 if uid in collections else 0,
         )
         for uid, w in works.items()
     ]
@@ -230,8 +234,9 @@ def rebuild_works(
         conn.executemany(
             """INSERT INTO works (item_uid, domain, title, sort_key, group_uid,
                                   series_uid, series_name, series_pos, listed, n_series,
-                                  has_image, browse_rank)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                  has_image, browse_rank, title_tokens, title_key,
+                                  alt_keys, is_collection)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             rows,
         )
 
@@ -296,3 +301,13 @@ def _browse_ranks(
         key=lambda u: (u not in with_image, position[u], works[u]["domain"], u),
     )
     return {uid: n for n, uid in enumerate(order, start=1)}
+
+
+def _alt_keys(alt_titles: str | None) -> str:
+    """Alternative titles as ``|key|key|``, so one ``instr`` finds an exact one."""
+    try:
+        titles = json.loads(alt_titles or "[]")
+    except json.JSONDecodeError:
+        titles = []
+    keys = [title_key(t) for t in titles if isinstance(t, str)]
+    return "|" + "|".join(k for k in keys if k) + "|"
