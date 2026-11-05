@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from functools import lru_cache
@@ -20,10 +20,14 @@ from recsys.db import (
     domain_stats,
     get_item,
     get_rating,
+    group_peers,
+    groups_of,
     last_ingest_at,
     query_items,
     query_ratings,
     rated_uids,
+    series_members,
+    series_sizes,
     set_rating,
 )
 from recsys.link import representative_uid, work_members
@@ -38,6 +42,7 @@ from recsys.schemas import (
     RatedItem,
     RatingIn,
     RecommendPage,
+    SeriesPage,
     SimilarItem,
     SimilarPage,
     Stats,
@@ -132,6 +137,75 @@ def _as_works(conn: sqlite3.Connection, found: list[Any], drop: set[str]) -> lis
     return out
 
 
+def _same_story(conn: sqlite3.Connection, uids: list[str]) -> set[str]:
+    """Every work that is the same story as any of ``uids``, themselves included.
+
+    The group ``works.py`` stored -- adaptations, franchise entries and series
+    volumes, followed transitively, so a third season is as suppressed as a
+    second. Direct edges are added on top so a work the read view has not seen
+    yet (a fresh ingest, no rebuild) is still covered one hop out.
+    """
+    out = group_peers(conn, uids)
+    for uid in uids:
+        out |= franchise_representatives(conn, uid)
+    return out
+
+
+def _fill_page(
+    conn: sqlite3.Connection,
+    fetch: Callable[[int], list[Any]],
+    k: int,
+    *,
+    drop: set[str],
+    domain: str | None,
+    suppress: set[str],
+    collapse: bool,
+) -> tuple[list[_Hit], int, int]:
+    """Up to ``k`` neighbours, one per story, and how many were hidden on the way.
+
+    ``fetch(n)`` asks the model for its ``n`` best. Each answer is translated to
+    the works listings show, filtered to ``domain``, stripped of ``suppress``
+    (the query's own stories) and -- with ``collapse`` -- kept to one work per
+    group, the best-scored: *BLAME!*'s manga and its film are both near most
+    things the other is near, and a page showing both says one thing twice.
+
+    Collapsing happens after the fetch, so a big group sitting nearest the query
+    -- a mecha show beside Gundam -- can fold forty hits into one. The fetch is
+    widened until the page is full or the model has nothing more to give,
+    rather than returning a short page with eligible works still unread.
+
+    The two counts are of hits passed over before the page filled, so they
+    describe this page and agree with each other.
+    """
+    want = 4 * k + len(suppress)
+    while True:
+        raw = fetch(want)
+        hits = _as_works(conn, raw, drop)
+        if domain is not None:
+            # Checked again after translation: a stale row filed under one
+            # domain can belong to a work another domain represents.
+            hits = [h for h in hits if h.domain == domain]
+        group = groups_of(conn, [h.item_uid for h in hits]) if collapse else {}
+        kept: list[_Hit] = []
+        seen: set[str] = set()
+        n_suppressed = n_collapsed = 0
+        for hit in hits:
+            if len(kept) == k:
+                break
+            if hit.item_uid in suppress:
+                n_suppressed += 1
+                continue
+            key = group.get(hit.item_uid, hit.item_uid)
+            if key in seen:
+                n_collapsed += 1
+                continue
+            seen.add(key)
+            kept.append(hit)
+        if len(kept) >= k or len(raw) < want:
+            return kept, n_suppressed, n_collapsed
+        want *= 2
+
+
 def _outvoted(conn: sqlite3.Connection) -> set[str]:
     """Rows that no longer represent their work, so the matrix must not answer with them.
 
@@ -177,7 +251,24 @@ def list_items(
     domain = _validated_domain(domain)
     q = q.strip() if q else None
     total, items = query_items(conn, domain=domain, q=q, limit=limit, offset=offset)
-    return ItemsPage(total=total, limit=limit, offset=offset, items=items)
+    return ItemsPage(
+        total=total, limit=limit, offset=offset, items=items,
+        series_sizes=series_sizes(conn, [i.item_uid for i in items]),
+    )
+
+
+@router.get("/series/{item_uid:path}", response_model=SeriesPage)
+def read_series(item_uid: str, conn: Conn) -> SeriesPage:
+    """The volumes of the book series ``item_uid`` belongs to, in order.
+
+    Listings fold a series behind one card; this is how the others are reached.
+    404 when the work is in no series.
+    """
+    found = series_members(conn, item_uid)
+    if found is None:
+        raise HTTPException(404, f"{item_uid!r} is in no series")
+    name, items = found
+    return SeriesPage(series=name, items=items)
 
 
 @router.get("/items/{item_uid:path}", response_model=UnifiedItem)
@@ -198,7 +289,9 @@ def similar(
     domain: str | None = Query(None, description="Restrict neighbours to one domain"),
     k: int = Query(10, ge=1, le=50),
     same_franchise: bool = Query(
-        False, description="Include a work's own sequels, prequels and side stories"
+        False,
+        description="Include the work's own story -- adaptations, sequels, side stories, "
+                    "series volumes -- and stop keeping one result per story",
     ),
     method: str = Query(
         "content", description="'content' (text embeddings) or 'cf' (who liked what)"
@@ -225,14 +318,11 @@ def similar(
     # represents it, and that is the one whose neighbours are wanted.
     work_uid = representative_uid(conn, item_uid)
 
-    # Over-fetch so franchise suppression cannot return fewer than k when there
-    # are k genuine neighbours behind the sequels -- and by k again, because a
-    # matrix older than the last relink can hold several rows of one work.
     suppress: set[str] = set()
     if not same_franchise:
-        suppress = franchise_representatives(conn, item_uid)
-    want = 2 * k + len(suppress)
+        suppress = _same_story(conn, [work_uid, item_uid]) - {work_uid}
 
+    fetch: Callable[[int], list[Any]]
     if method == "cf":
         cf = _collaborative_index(cfg.collaborative_path)
         if cf is None:
@@ -243,7 +333,8 @@ def similar(
             )
         # The index translates uid spaces itself; an empty list means this work
         # has no ratings, which is an answer rather than an error.
-        found = cf.similar_to(conn, item_uid, k=want)
+        def fetch(n: int) -> list[Any]:
+            return list(cf.similar_to(conn, item_uid, k=n))
     else:
         index = _similarity_index(cfg.embeddings_path)
         if index is None:
@@ -266,26 +357,15 @@ def similar(
                 f"{item_uid!r} is not in the embedding matrix; "
                 "rebuild it with scripts/embed.py",
             )
-        found = index.similar_to_vector(
-            index.vector_for(query), k=want, domain=domain,
-            exclude=_outvoted(conn) | {query, work_uid},
-        )
+        vector, exclude = index.vector_for(query), _outvoted(conn) | {query, work_uid}
 
-    found = _as_works(conn, found, {work_uid})
-    if domain is not None:
-        # Checked again after translation: a stale row filed under one domain
-        # can belong to a work another domain represents.
-        found = [n for n in found if n.domain == domain]
+        def fetch(n: int) -> list[Any]:
+            return list(index.similar_to_vector(vector, k=n, domain=domain, exclude=exclude))
 
-    kept: list[Any] = []
-    n_suppressed = 0
-    for neighbour in found:
-        if neighbour.item_uid in suppress:
-            n_suppressed += 1
-            continue
-        if len(kept) == k:
-            break
-        kept.append(neighbour)
+    kept, n_suppressed, n_collapsed = _fill_page(
+        conn, fetch, k, drop={work_uid}, domain=domain, suppress=suppress,
+        collapse=not same_franchise,
+    )
 
     items = {i.item_uid: i for i in (get_item(conn, n.item_uid) for n in kept) if i is not None}
     return SimilarPage(
@@ -293,6 +373,7 @@ def similar(
         domain=domain,
         method=method,
         n_suppressed=n_suppressed,
+        n_collapsed=n_collapsed,
         neighbours=[
             SimilarItem(score=n.score, item=items[n.item_uid])
             for n in kept
@@ -405,7 +486,9 @@ def recommend(
     domain: str | None = Query(None, description="Recommend within one domain"),
     k: int = Query(20, ge=1, le=50),
     same_franchise: bool = Query(
-        False, description="Include sequels and side stories of things you rated"
+        False,
+        description="Include adaptations, sequels and series volumes of what you rated, "
+                    "and stop keeping one result per story",
     ),
 ) -> RecommendPage:
     """Works nearest *your taste*, optionally in a domain you have never rated in.
@@ -438,26 +521,31 @@ def recommend(
     # -- the sequels and side stories of it, which are the nearest neighbours
     # of anything you liked and the least useful answer to "what next".
     exclude = set(ratings)
-    n_before = len(exclude)
     if not same_franchise:
-        for uid in ratings:
-            exclude |= franchise_representatives(conn, uid)
+        exclude |= _same_story(conn, list(ratings))
 
-    # Over-fetched and translated for the same reason as /api/similar: a stale
-    # matrix can hold a second row of a work you rated, under another uid.
-    found = index.similar_to_vector(
-        profile.vector, k=2 * k, domain=domain, exclude=exclude | _outvoted(conn)
+    # Excluded at the matrix, before the top-k, with every row that lost its
+    # primary election: a stale matrix can hold a second row of a work you
+    # rated under another uid. Paged like /api/similar, one work per story.
+    masked = exclude | _outvoted(conn)
+    found, _, n_collapsed = _fill_page(
+        conn,
+        lambda n: index.similar_to_vector(profile.vector, k=n, domain=domain, exclude=masked),
+        k,
+        drop=exclude,
+        domain=domain,
+        suppress=set(),
+        collapse=not same_franchise,
     )
-    found = _as_works(conn, found, exclude)
-    if domain is not None:
-        found = [n for n in found if n.domain == domain]
-    found = found[:k]
     items = {i.item_uid: i for i in (get_item(conn, n.item_uid) for n in found) if i is not None}
     return RecommendPage(
         domain=domain,
         n_rated=profile.n_rated,
         n_used=profile.n_used,
-        n_suppressed=len(exclude) - n_before,
+        # Works the matrix could have answered with, not every uid an edge
+        # names -- an edge's far side need not be in the catalog.
+        n_suppressed=sum(1 for u in exclude - set(ratings) if index.has(u)),
+        n_collapsed=n_collapsed,
         neighbours=[
             SimilarItem(score=n.score, item=items[n.item_uid])
             for n in found

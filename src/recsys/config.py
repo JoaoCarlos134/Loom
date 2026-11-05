@@ -166,6 +166,23 @@ class Settings(BaseSettings):
     mal_ratings_path: str = ""
     mal_ratings_target_count: int = 0
 
+    # --- read view ---
+    # A group -- the works one story spans, joined by adaptation, franchise and
+    # series edges -- larger than this is not treated as one story: its members
+    # fall back to their direct edges. Transitive closure is what makes a third
+    # season count as the first's franchise, and it is also how one crossover
+    # special chains two franchises together. The biggest single franchises on
+    # AniList run to roughly 100-200 entries (Gundam, Pokemon, Detective Conan),
+    # so 250 sits above them. PROVISIONAL: not yet set from the full build's
+    # distribution; bootstrap.py prints the largest groups so it can be.
+    max_group_size: int = 250
+    # goodbooks-10k files each volume as a book: Death Note is eight, Discworld
+    # thirty-nine. Folded, a series is one card (its most read volume) and the
+    # rest are a click away; measured on the real books.csv that is 852 series
+    # holding 3,640 books, so 2,788 leave the shelf. False lists every volume
+    # again; the series still counts as one story for recommendations.
+    fold_book_series: bool = True
+
     # --- models ---
     # A small ONNX sentence embedder: 384 dimensions, ~67 MB, CPU-only, no
     # torch. Fetched once into DATA_DIR/models -- fastembed otherwise caches to

@@ -236,11 +236,23 @@ class UnifiedItem(BaseModel):
 
 
 class ItemsPage(BaseModel):
-    """Paginated /api/items response."""
+    """Paginated /api/items response.
+
+    ``series_sizes`` names the cards that stand for a whole book series and how
+    many volumes each folds in, so a card can say so without a request each.
+    """
 
     total: int
     limit: int
     offset: int
+    items: list[UnifiedItem]
+    series_sizes: dict[str, int] = Field(default_factory=dict)
+
+
+class SeriesPage(BaseModel):
+    """/api/series response: a book series' volumes, in order."""
+
+    series: str | None = None
     items: list[UnifiedItem]
 
 
@@ -264,6 +276,8 @@ class SimilarPage(BaseModel):
     domain: str | None = None
     method: str = "content"
     n_suppressed: int = 0
+    #: Neighbours left out for sharing a group with a better-scored one.
+    n_collapsed: int = 0
     neighbours: list[SimilarItem]
 
 
@@ -314,6 +328,7 @@ class RecommendPage(BaseModel):
     n_rated: int
     n_used: int
     n_suppressed: int = 0
+    n_collapsed: int = 0
     neighbours: list[SimilarItem]
 
 

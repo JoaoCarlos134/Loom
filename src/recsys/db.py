@@ -206,6 +206,36 @@ CREATE TABLE id_map (
 ) WITHOUT ROWID;
 """
 
+# `works` gains what results and listings need to treat a story as one thing.
+# `group_uid` is the connected component of a work's adaptation, franchise and
+# series edges, in representative space -- what results suppress and collapse
+# to one entry. `series_*` and `listed` fold a book series behind one card:
+# goodbooks-10k files every volume as a book, so Death Note was eight cards.
+# Recreated rather than altered because it is a cache: it comes back empty and
+# reads fall back to the live joins until `bootstrap.py` rebuilds it, which
+# every bootstrap does in seconds.
+MIGRATION_8 = """
+DROP TABLE works;
+
+CREATE TABLE works (
+    item_uid    TEXT PRIMARY KEY,
+    domain      TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    sort_key    REAL,
+    group_uid   TEXT,
+    series_uid  TEXT,
+    series_name TEXT,
+    series_pos  REAL,
+    listed      INTEGER NOT NULL DEFAULT 1,
+    n_series    INTEGER
+) WITHOUT ROWID;
+
+CREATE INDEX idx_works_sort        ON works(listed, sort_key DESC, title ASC);
+CREATE INDEX idx_works_domain_sort ON works(listed, domain, sort_key DESC, title ASC);
+CREATE INDEX idx_works_group       ON works(group_uid);
+CREATE INDEX idx_works_series      ON works(series_uid);
+"""
+
 # Append new migrations here; never modify an existing entry.
 MIGRATIONS: list[tuple[int, str]] = [
     (1, MIGRATION_1),
@@ -215,6 +245,7 @@ MIGRATIONS: list[tuple[int, str]] = [
     (5, MIGRATION_5),
     (6, MIGRATION_6),
     (7, MIGRATION_7),
+    (8, MIGRATION_8),
 ]
 
 SCHEMA_VERSION = MIGRATIONS[-1][0]
@@ -629,6 +660,10 @@ def query_items(
     One row per *work*: where several sources describe the same thing, only the
     row `link.py` marked primary is returned. Use :func:`get_item` to reach a
     non-primary row directly by uid -- it is still there.
+
+    And one card per *book series*: a listing shows the series' most read
+    volume, and a search shows the volume that matched best, once per series.
+    Both need `works`; without it the volumes list individually.
     """
     params: list[Any] = []
     where: list[str] = []
@@ -653,35 +688,151 @@ def query_items(
         return (0, [])
 
     if match:
-        base = (
-            "FROM items_fts f JOIN items i ON i.rowid = f.rowid "
-            f"{joins} WHERE items_fts MATCH ?"
-        )
         params.append(match)
         if domain:
             params.append(domain)
         tail = " AND " + " AND ".join(where) if where else ""
-        order = f"ORDER BY bm25(items_fts, 10.0, 4.0, 1.0), {sort} DESC"
-        count_base = base
+        series = "w.series_uid" if fast else "NULL"
+        # One pass over the matches: the best match of each series kept, and
+        # the total counted by a window over the same rows rather than by a
+        # second scan -- every keystroke of as-you-type search pays for this.
+        # Only series volumes go through the partitioning window; everything
+        # else is its own card already. `rid` closes every tie, so paging is
+        # stable.
+        rows = conn.execute(
+            f"""WITH matched AS (
+                    SELECT i.rowid AS rid, {series} AS series, {sort} AS pop,
+                           bm25(items_fts, 10.0, 4.0, 1.0) AS score
+                      FROM items_fts f JOIN items i ON i.rowid = f.rowid {joins}
+                     WHERE items_fts MATCH ?{tail}),
+                best AS (
+                    SELECT rid, score, pop FROM matched WHERE series IS NULL
+                    UNION ALL
+                    SELECT rid, score, pop FROM (
+                        SELECT rid, score, pop, ROW_NUMBER() OVER (
+                                   PARTITION BY series ORDER BY score, pop DESC, rid) AS rn
+                          FROM matched WHERE series IS NOT NULL)
+                     WHERE rn = 1),
+                page AS (
+                    -- Ordered and cut *before* the join, so only the page's
+                    -- rows are read back from `items`; the window still sees
+                    -- every card, because windows run before LIMIT.
+                    SELECT rid, score, pop, COUNT(*) OVER () AS total FROM best
+                     ORDER BY score, pop DESC, rid LIMIT ? OFFSET ?)
+                SELECT {_SELECT_COLS}, p.total AS total FROM page p
+                  JOIN items i ON i.rowid = p.rid
+                 ORDER BY p.score, p.pop DESC, p.rid""",
+            [*params, limit, offset],
+        ).fetchall()
+        if rows:
+            total = rows[0]["total"]
+        else:  # past the last page: the window had no row to report on
+            card = "COALESCE(w.series_uid, w.item_uid)" if fast else "i.item_uid"
+            total = conn.execute(
+                f"""SELECT COUNT(DISTINCT {card}) FROM items_fts f
+                    JOIN items i ON i.rowid = f.rowid {joins}
+                    WHERE items_fts MATCH ?{tail}""",
+                params,
+            ).fetchone()[0]
+        rows = [{k: v for k, v in dict(r).items() if k != "total"} for r in rows]
     else:
+        if fast:
+            where.insert(0, "w.listed = 1")
         base = f"FROM items i {joins}"
         if domain:
             params.append(domain)
         tail = " WHERE " + " AND ".join(where) if where else ""
-        order = f"ORDER BY {sort} DESC, i.title ASC"
+        # `w.title` rather than `i.title` when it can be: the same value, and
+        # the one the index carries, so the whole ORDER BY is the index's.
+        order = f"ORDER BY {sort} DESC, {'w' if fast else 'i'}.title ASC"
         # Counted straight off `works`, without touching `items` at all. The
-        # page needs the item columns; the count needs one row per work, which
+        # page needs the item columns; the count needs one row per card, which
         # is what `works` *is* -- joining back to `items` to count them cost
         # 60 ms of the 62, an index probe per work to learn nothing.
         count_base = "FROM works w" if fast else base
 
-    total = conn.execute(f"SELECT COUNT(*) {count_base}{tail}", params).fetchone()[0]
-    rows = conn.execute(
-        f"SELECT {_SELECT_COLS} {base}{tail} {order} LIMIT ? OFFSET ?",
-        [*params, limit, offset],
-    ).fetchall()
+        total = conn.execute(f"SELECT COUNT(*) {count_base}{tail}", params).fetchone()[0]
+        rows = conn.execute(
+            f"SELECT {_SELECT_COLS} {base}{tail} {order} LIMIT ? OFFSET ?",
+            [*params, limit, offset],
+        ).fetchall()
     items = [UnifiedItem.from_row(r) for r in rows]
     return (int(total), fill_from_siblings(conn, items))
+
+
+def series_sizes(conn: sqlite3.Connection, uids: Sequence[str]) -> dict[str, int]:
+    """For each uid that is a series' card, how many volumes it stands for."""
+    out: dict[str, int] = {}
+    for chunk in _chunks(list(uids), 400):
+        marks = ",".join("?" * len(chunk))
+        for r in conn.execute(
+            f"SELECT item_uid, n_series FROM works "
+            f"WHERE item_uid IN ({marks}) AND n_series > 1",
+            list(chunk),
+        ):
+            out[r["item_uid"]] = int(r["n_series"])
+    return out
+
+
+def series_members(
+    conn: sqlite3.Connection, item_uid: str
+) -> tuple[str | None, list[UnifiedItem]] | None:
+    """(series name, its volumes in order) for the series ``item_uid`` is in.
+
+    ``None`` when it is in no series. Any row of a volume's work reaches it.
+    """
+    from recsys.link import representative_uid
+
+    row = conn.execute(
+        "SELECT series_uid, series_name FROM works WHERE item_uid = ?",
+        (representative_uid(conn, item_uid),),
+    ).fetchone()
+    if row is None or row["series_uid"] is None:
+        return None
+    rows = conn.execute(
+        f"""SELECT {_SELECT_COLS} FROM works w JOIN items i ON i.item_uid = w.item_uid
+            WHERE w.series_uid = ?
+            ORDER BY w.series_pos IS NULL, w.series_pos, i.title""",
+        (row["series_uid"],),
+    ).fetchall()
+    items = fill_from_siblings(conn, [UnifiedItem.from_row(r) for r in rows])
+    return (row["series_name"], items)
+
+
+def group_peers(conn: sqlite3.Connection, uids: Iterable[str]) -> set[str]:
+    """Every work sharing a group with any of ``uids``, themselves included.
+
+    The group is the connected component of adaptation, franchise and series
+    edges `works.py` stored. Uids `works` does not hold come back unchanged.
+    """
+    wanted = list(dict.fromkeys(uids))
+    out = set(wanted)
+    for chunk in _chunks(wanted, 400):
+        marks = ",".join("?" * len(chunk))
+        out.update(
+            r[0]
+            for r in conn.execute(
+                f"""SELECT peer.item_uid FROM works mine
+                    JOIN works peer ON peer.group_uid = mine.group_uid
+                    WHERE mine.item_uid IN ({marks}) AND mine.group_uid IS NOT NULL""",
+                list(chunk),
+            )
+        )
+    return out
+
+
+def groups_of(conn: sqlite3.Connection, uids: Sequence[str]) -> dict[str, str]:
+    """uid -> its group, for the uids that are in one."""
+    out: dict[str, str] = {}
+    for chunk in _chunks(list(uids), 400):
+        marks = ",".join("?" * len(chunk))
+        for r in conn.execute(
+            f"SELECT item_uid, group_uid FROM works "
+            f"WHERE item_uid IN ({marks}) AND group_uid IS NOT NULL",
+            list(chunk),
+        ):
+            out[r["item_uid"]] = r["group_uid"]
+    return out
 
 
 #: Scalars a sibling row may supply when the representative lacks them. Lists
@@ -765,9 +916,14 @@ def get_item(conn: sqlite3.Connection, item_uid: str) -> UnifiedItem | None:
 
 
 def count_items(conn: sqlite3.Connection) -> int:
-    """Works, not rows -- what a reader of the catalog actually sees."""
+    """Cards, not rows -- what a reader of the catalog actually sees.
+
+    One per work, and one per book series rather than per volume once `works`
+    is built. Before then the fallback counts works, volumes included: the
+    series are a property of the read view, not of the rows.
+    """
     if _works_built(conn):
-        return int(conn.execute("SELECT COUNT(*) FROM works").fetchone()[0])
+        return int(conn.execute("SELECT COUNT(*) FROM works WHERE listed = 1").fetchone()[0])
     return int(
         conn.execute(
             f"SELECT COUNT(*) FROM items i {_PRIMARY_JOIN} WHERE {_PRIMARY_ONLY}"
@@ -788,7 +944,8 @@ def domain_stats(conn: sqlite3.Connection) -> list[dict[str, Any]]:
         counted = {
             r["domain"]: r["n_items"]
             for r in conn.execute(
-                "SELECT domain, COUNT(*) AS n_items FROM works GROUP BY domain"
+                "SELECT domain, COUNT(*) AS n_items FROM works WHERE listed = 1 "
+                "GROUP BY domain"
             )
         }
         rows = [

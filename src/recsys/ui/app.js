@@ -81,7 +81,7 @@
 
   // ---- rendering --------------------------------------------------------
 
-  function makeCard(item) {
+  function makeCard(item, nSeries) {
     var card = el("button", "card");
     card.type = "button";
     card.dataset.uid = item.item_uid;
@@ -113,6 +113,9 @@
     var bits = [];
     if (item.year) bits.push(String(item.year));
     bits.push(item.domain);
+    // A card standing for a whole book series says so; its volumes are one
+    // click away in the detail view rather than eight cards on the shelf.
+    if (nSeries > 1) bits.push(nSeries + " volumes");
     meta.appendChild(el("span", null, bits.join(" · ")));
     body.appendChild(meta);
 
@@ -150,7 +153,7 @@
   function renderPage(rows, append) {
     if (!append) els.grid.replaceChildren();
     var frag = document.createDocumentFragment();
-    rows.forEach(function (row) { frag.appendChild(makeCard(row.item)); });
+    rows.forEach(function (row) { frag.appendChild(makeCard(row.item, row.nSeries)); });
     els.grid.appendChild(frag);
   }
 
@@ -204,8 +207,9 @@
         notice: ""
       };
     }
+    var sizes = body.series_sizes || {};
     return {
-      rows: body.items.map(function (i) { return { item: i }; }),
+      rows: body.items.map(function (i) { return { item: i, nSeries: sizes[i.item_uid] }; }),
       total: body.total,
       more: true,
       notice: ""
@@ -223,7 +227,9 @@
       text += "  ·  " + fmtNumber(body.n_used) + " shaped this";
     }
     if (body.n_suppressed) {
-      text += "  ·  " + fmtNumber(body.n_suppressed) + " same-franchise hidden";
+      // Adaptations, sequels and series volumes of what you rated: the same
+      // stories, which are the nearest neighbours and the least useful "next".
+      text += "  ·  " + fmtNumber(body.n_suppressed) + " of the same stories hidden";
     }
     return text;
   }
@@ -455,9 +461,41 @@
       });
       main.appendChild(dl);
 
+      var series = el("section", "series");
+      main.appendChild(series);
+      loadSeries(series, item.item_uid);
+
       inner.appendChild(main);
       els.detailBody.replaceChildren(inner);
       els.detail.showModal();
+    });
+  }
+
+  /* The other volumes of a book series, which listings fold behind one card.
+   * 404 means "in no series" -- the common case -- and leaves nothing behind. */
+  function loadSeries(section, uid) {
+    api("/api/series/" + encodeURIComponent(uid)).then(function (body) {
+      if (!body.items || body.items.length < 2) return;
+      section.appendChild(el("h3", "row-title",
+        "In this series" + (body.series ? " · " + body.series : "") +
+        " (" + body.items.length + ")"));
+      var list = el("ol", "series-list");
+      body.items.forEach(function (vol) {
+        var li = el("li");
+        var b = el("button", "linkish", vol.title);
+        b.type = "button";
+        if (vol.item_uid === uid) b.classList.add("is-current");
+        b.addEventListener("click", function () { openDetail(vol.item_uid); });
+        li.appendChild(b);
+        list.appendChild(li);
+      });
+      section.appendChild(list);
+    }).catch(function (err) {
+      // 404 is the usual answer -- most works are in no series -- and shows
+      // nothing. Anything else is worth a line rather than silence.
+      if (err.status !== 404) {
+        section.appendChild(el("p", "rate-error", "Series unavailable: " + err.message));
+      }
     });
   }
 

@@ -117,6 +117,14 @@ def report(
         print("\nRead view")
         print(f"  {works.n_works} works indexed for reading; "
               f"{works.n_uncalibrated} ordered by a raw count")
+        print(f"  {works.n_groups} adaptation/franchise/series groups; "
+              f"{works.n_series} book series fold {works.n_unlisted} volumes behind one card")
+        if works.largest_groups:
+            print("  largest groups: " + ", ".join(
+                f"{n} ({uid})" for n, uid in works.largest_groups))
+        for n, uid in works.oversized_groups:
+            print(f"  !! {n} works joined through {uid} exceed MAX_GROUP_SIZE="
+                  f"{settings.max_group_size}; left ungrouped, direct edges only")
 
     if rels is not None:
         print("\nRelation edges")
@@ -140,8 +148,10 @@ def report(
     else:
         print("  (empty)")
 
-    dedup = f"  ({rows} rows before dedup)" if rows != total else ""
-    print(f"\n  total items : {total}{dedup}")
+    # Cards are what a reader sees: one per work, one per book series. Rows
+    # are what is stored -- several sources per work, every volume kept.
+    stored = f"  ({rows} stored rows)" if rows != total else ""
+    print(f"\n  total cards : {total}{stored}")
     print(f"  database    : {settings.db_path}")
     print(f"  cache       : {settings.cache_dir}")
     print(f"  region      : {settings.region}")
@@ -202,11 +212,12 @@ def main(argv: list[str] | None = None) -> int:
             # Strictly after linking: the calibration anchors are the works
             # that linking just proved two sources both carry.
             pops = rebuild_popularity(conn)
-            # Strictly after both: the read view stores what they decided --
-            # which row represents a work, and what it sorts by.
-            works = rebuild_works(conn)
-            # Independent of the three above; it reads only stored raw_json.
+            # Independent of the two above; it reads only stored rows.
             rels = rebuild_relations(conn)
+            # Strictly after all three: the read view stores what they decided --
+            # which row represents a work, what it sorts by, and which story
+            # (adaptation, franchise, series) it belongs to.
+            works = rebuild_works(conn)
 
     report(results, links, pops, works, rels)
     return 1 if any(r.status != "ok" for r in results) else 0

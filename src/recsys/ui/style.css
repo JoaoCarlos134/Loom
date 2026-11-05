@@ -399,3 +399,32 @@ code {
   main { padding: 16px 16px 40px; }
   .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
 }
+
+/* ---- series list in the detail view ---------------------------------- */
+
+.row-title {
+  margin: 1.4rem 0 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.series-list {
+  margin: 0;
+  padding-left: 1.4rem;
+  columns: 2;
+  font-size: 0.88rem;
+}
+
+.linkish {
+  background: none;
+  border: 0;
+  padding: 0.1rem 0;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.linkish:hover { text-decoration: underline; }
+.linkish.is-current { font-weight: 600; }
