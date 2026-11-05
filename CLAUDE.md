@@ -4,12 +4,15 @@ Cross-domain hybrid recommender (anime / manga / books / music / movies / TV), l
 desktop app, no admin rights. `README.md` holds the architecture and its "Why these
 choices"; `ROADMAP.md` holds where the project is and what comes next.
 
-**Status (2026-11-05):** 1.0 release candidate on `claude/sweet-ride-u2k95y`. The
-seven bugs measured on the full build are fixed with regression tests; the starter
-pack, the resumable full build (`scripts/build.py`) and the PyInstaller package are
-built and tested, none published. Numbers in the docs come from `scripts/measure.py`.
-Waiting on the owner: a measurement of the full build with this code, and approval
-to publish the starter pack.
+**Status (2026-11-05):** 1.0 release candidate (`1.0.0rc1`) on
+`claude/sweet-ride-u2k95y`. The seven bugs measured on the full build are fixed
+with regression tests. The starter pack was only dry-run on goodbooks-10k (no
+vectors, no Open Library text); `scripts/build.py` ran end to end only on the
+sources the build machine reached plus a fixture; the PyInstaller package was
+built and smoke-tested on Linux, never on Windows. Nothing is published. The
+full build's figures in the docs were counted by the owner before
+`scripts/measure.py` existed; new ones come from it. Waiting on the owner: a
+measurement of the full build with this code, and approval to publish.
 
 ## Rules
 
@@ -26,9 +29,10 @@ to publish the starter pack.
   without the change it covers. Commit messages end with the Co-Authored-By line.
 - **Ask before anything that publishes** (releases, packages, tags) or needs
   the owner's accounts.
-- **Measure, don't edit numbers.** A number in README/ROADMAP is one
-  `scripts/measure.py` printed; the owner's full build is opened read-only for
-  that, and anything that writes runs against a copy or a fresh `DATA_DIR`.
+- **Measure, don't edit numbers.** A new number in README/ROADMAP is one
+  `scripts/measure.py` (or a named script or commit) printed, and older ones say
+  where they came from; the owner's full build is opened read-only for that, and
+  anything that writes runs against a copy or a fresh `DATA_DIR`.
 
 ## Commands
 
@@ -60,7 +64,7 @@ uv-created venv. Use a stdlib venv and install into it with uv:
 
 ```powershell
 py -3.12 -m venv C:\loomvenv
-uv export --frozen --all-groups --no-hashes > req.txt
+uv export --frozen --all-groups --no-hashes -o req.txt   # not "> req.txt": UTF-16
 uv pip install -r req.txt --python C:\loomvenv\Scripts\python.exe
 C:\loomvenv\Scripts\python.exe -m pytest
 C:\loomvenv\Scripts\python.exe -m ruff check .
@@ -85,10 +89,15 @@ stdlib venv only.
   series fold behind one card (`FOLD_BOOK_SERIES`). ROADMAP "Done: 1.0".
 - **2026-11-05 Anime <-> TMDB twins linked through Wikidata's id map**, a
   sibling contract; mapped rows never represent a work. README "Why these choices".
+- **2026-11-05 TMDB retention runs without a dry run**: `prune.expire`, called
+  by every full build after the TMDB steps, deletes TMDB rows and cached
+  responses past `TMDB_MAX_AGE_DAYS` (180), because TMDB's terms require it.
+  README "TMDB", ROADMAP Priority 1.
 - **2026-11-05 Embedding vectors carry document fingerprints**; rebuilds are
   incremental. ROADMAP "Known issues".
-- **2026-11-05 Python 3.12-3.14** (`<3.15`: pythonnet and onnxruntime have no
-  3.15 wheels); CI tests all three on Windows.
+- **2026-11-05 Python 3.12-3.14** (`<3.15`: pythonnet declares `<3.15` and
+  onnxruntime has no 3.15 wheel); CI tests all three on Windows. README "Clone
+  and sync", ROADMAP "Done: 1.0".
 - **2026-11-04 MIT licence**, and the repo recreated with clean history.
   ROADMAP Priority 1.
 - **2026-09 Calibrate popularity on overlap, not percentile-within-source.**
@@ -97,15 +106,21 @@ stdlib venv only.
 
 ## Where to continue
 
-1. Measure the full build with this code (on a copy): `scripts/measure.py`,
-   `bootstrap.py --only idmap_wikidata`, `bootstrap.py --no-ingest`, then
-   `measure.py` again; put the before/after into README and ROADMAP.
+1. Measure the full build with this code, on a copy (`DATA_DIR` pointed at it),
+   in this order -- ROADMAP "Where we are" gives the reasons:
+   `measure.py --json > before.json`; `embed.py --adopt` (before anything
+   relinks: a work's document folds in its siblings' text); `bootstrap.py
+   --only book_goodbooks --only book_openlibrary --only music_musicbrainz
+   --only idmap_wikidata` with `HTTP_CACHE_TTL_DAYS=0`; `bootstrap.py
+   --no-ingest`; `embed.py`; `measure.py --json > after.json`. Put the
+   before/after into README and ROADMAP.
 2. Set `MAX_GROUP_SIZE` from the largest groups that measurement prints.
-3. Build the starter pack from the full build: `scripts/embed.py --adopt` once
-   (the matrix predates fingerprints; only vectors whose fingerprint matches the
-   pack's own documents ship), then `scripts/starter.py --version v1`; with the
-   owner's approval, publish it and pin `STARTER_SHA256`.
-4. Run `.github/workflows/package.yml` once it is on `main`.
+3. From the same copy, `scripts/starter.py --version v1` (only vectors whose
+   fingerprint matches the pack's own documents ship). With the owner's
+   approval, publish it and pin its checksum as the `starter_sha256` default in
+   `config.py` -- a stranger's checkout and the packaged app have no `.env`.
+4. Run `.github/workflows/package.yml` (manual dispatch) and check the Windows
+   build; it has never run.
 5. ROADMAP "Next step": blend the two models; import a MAL/AniList library.
 
 ## The one architectural invariant
@@ -178,16 +193,17 @@ indifferent to which kind they hold. Same three-step seam either way;
   throws out *Metropolis*, and a language filter mostly encodes a bias toward
   English. `tests/test_prune.py` pins the old-but-well-rated case.
 
-- **`prune.py` is the only code that deletes *catalog* rows.** (The starter
-  pack builder drops ratings from the *pack's own copy*, and `--starter`
-  replaces a database file only when it holds none of your ratings; neither
-  touches rows of a catalog in use.) Its one rule that runs without a dry
-  run is `prune.expire`, which the full build calls every time to delete TMDB
-  data kept past TMDB's six-month limit -- the terms require it. Everything else upserts; `link.py` hides duplicates without touching them and `popularity.py`
-  writes a second opinion beside the source datum. Pruning never runs as part of
-  a normal bootstrap, defaults to a dry run, and reports before it acts. After
-  it runs, every derived table -- `links`, `popularity_norm`, `works`,
-  `relations` -- must be rebuilt; they point at deleted rows.
+- **`prune.py` is the only code that deletes *catalog* rows.** (The starter pack
+  builder drops ratings from the *pack's own copy*, and `--starter` replaces a
+  database file only when it holds none of your ratings; neither touches rows of
+  a catalog in use.) Its one rule that runs without a dry run is `prune.expire`,
+  which the full build calls every time to delete TMDB data kept past TMDB's
+  six-month limit -- the terms require it. Everything else upserts; `link.py`
+  hides duplicates without touching them and `popularity.py` writes a second
+  opinion beside the source datum. Pruning never runs as part of a normal
+  bootstrap, defaults to a dry run, and reports before it acts. After it runs,
+  every derived table -- `links`, `popularity_norm`, `works`, `relations` --
+  must be rebuilt; they point at deleted rows.
 
   `db.delete_rating` is the one deletion outside it and is not the same act. The
   rule above exists because derived tables point at catalog rows; nothing on
@@ -202,8 +218,9 @@ indifferent to which kind they hold. Same three-step seam either way;
 
 - **Credentials live in `.env` and nowhere else.** TMDB needs one; Kaggle
   sometimes does (`KAGGLE_API_TOKEN`, handed to kagglehub through the variable
-  it reads), and `scripts/build.py` asks for either only when a step needs it. Prefer `TMDB_READ_TOKEN` (v4): it goes in an `Authorization`
-  header, so it never reaches a URL. A v3 `api_key` is a query parameter, and
+  it reads), and `scripts/build.py` asks for either only when a step needs it.
+  Prefer `TMDB_READ_TOKEN` (v4): it goes in an `Authorization` header, so it
+  never reaches a URL. A v3 `api_key` is a query parameter, and
   `DiskCache` writes the string it is keyed on into every envelope -- so
   `TmdbIngester._cache_key` strips it. Never put a real credential in
   `.env.example`, a docstring, a log line, or a test.
@@ -251,13 +268,14 @@ indifferent to which kind they hold. Same three-step seam either way;
   weight cannot be set from any measurement this project has.
 
 - **Ratings and listings use different uids; translate, never assume.** Every
-  rating names `anime:mal:{id}`, but only 451 of the 6,598 rated rows *represent*
-  their work -- the other 6,147 lost the primary election to an AniList row with
-  a synopsis, so they are exactly the uids `query_items` never returns and the
-  embedding matrix does not hold. `models/collaborative.py` stores its artifact
-  in rating space and translates at read time through `links`; that translation
-  lives in `CollaborativeIndex.similar_to` and nowhere else. Getting it wrong
-  returns an empty list and raises nothing.
+  MAL rating names `anime:mal:{id}` (goodbooks' name `book:goodbooks:{id}`), but
+  only 451 of the 6,598 rated anime rows *represent* their work -- the other
+  6,147 lost the primary election to an AniList row with a synopsis, so they are
+  exactly the uids `query_items` never returns and the embedding matrix does not
+  hold. `models/collaborative.py` stores its artifact in rating space and
+  translates at read time through `links`; that translation lives in
+  `CollaborativeIndex.similar_to` and nowhere else. Getting it wrong returns an
+  empty list and raises nothing.
 
 - **Migrations are append-only.** Add a new entry to `MIGRATIONS` in `db.py`;
   never edit a shipped one. `PRAGMA user_version` tracks what has been applied.

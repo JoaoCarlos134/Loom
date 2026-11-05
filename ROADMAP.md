@@ -61,15 +61,17 @@ public.
       is kept by the full build: `scripts/build.py` counts a TMDB step older
       than `TMDB_MAX_AGE_DAYS` (180) as not done and fetches it again, then
       deletes (`prune.expire`) the TMDB rows and cached responses the refetch
-      did not renew; no TMDB row ever reaches the starter pack. Still open, and the owner's to
-      decide: TMDB's logo (it has to be committed as a file, and could not be
+      did not renew; no TMDB row ever reaches the starter pack. That holds each
+      time `build.py` runs; a catalog built with `bootstrap.py` and never
+      rebuilt is not swept. Still open, and the owner's to decide: TMDB's logo (it has to be committed as a file, and could not be
       fetched from the build machine), and whether a local single-user app is
       an "operated recommendation service" -- the terms do not say.
 - [ ] **Open Library per-book requests versus their monthly dump: deferred.**
       The dump is the honest fix and is a new ingester reading ~3 GB of
       `ol_dump_works`; it is deferred because the cost the guidance is about is
-      now paid once: responses are cached, the full build makes them once, and
-      the starter pack ships the result, so a stranger makes none at all. The
+      now paid once: responses are cached, the full build makes them once, and a
+      starter pack built from it would carry the result, so a stranger makes
+      none at all. (No pack with Open Library text has been built yet.) The
       rate stays 3 req/s, Open Library's documented ceiling for identified
       clients; re-timing it needs the network the build machine did not have.
 - [x] **The MAL Kaggle dump's licence: settled as "not ours to ship".** Kaggle's
@@ -83,8 +85,8 @@ public.
       collection of data from the AniList API" and use "within competing,
       non-complementary services ... including anime and manga list or tracker
       services", for all data. Loom is local and redistributes nothing from
-      AniList, but a full build's partitioned sweep (~45k records) is mass
-      collection by any reading, and the library makes the app more list-shaped.
+      AniList, but a full build's partitioned sweep (29,034 manga alone on the
+      owner's build) is mass collection by any reading, and the library makes the app more list-shaped.
       The options are to keep it, to narrow AniList to enriching the MAL ids the
       dump already holds (losing post-2018 anime and most manga), or to ask
       AniList. Not decided here.
@@ -105,11 +107,14 @@ documented 3 req/s and 60 req/min. A stranger's `git clone` → `uv sync` →
 
 ## Where we are
 
-**1.0.** The seven bugs measured on the full build are fixed, each with a
-regression test that fails without the fix; a stranger can have a catalog in
-seconds (goodbooks-10k, no credentials), the starter pack in a minute once it is
-published, and the full build through one resumable command; and the app is
-packaged for people without Python.
+**1.0 release candidate** (`1.0.0rc1`, nothing published). The seven bugs
+measured on the full build are fixed, each with a regression test that fails
+without the fix; a stranger can have a catalog in seconds (goodbooks-10k, no
+credentials) and the full build through one resumable command. Not yet done:
+the starter pack has only been dry-run on goodbooks-10k (no vectors, no Open
+Library text), `scripts/build.py` has been run end to end only on the sources
+this machine reached plus a fixture, and the packaged app has been built and
+smoke-tested on Linux only -- its Windows build has never run.
 
 Measured in this release's session (2026-11-05), on what the build machine could
 reach -- the goodbooks-10k files from GitHub and synthetic catalogs; it could not
@@ -118,14 +123,14 @@ embedding model:
 
 ```
 tests                970   none touch the network; CI on Windows, Python 3.12-3.14
-goodbooks-10k     10,000   books, 5,976,479 ratings (58 s to load)
+goodbooks-10k     10,000   books, 5,976,479 ratings (~70 s to load)
   book series        852   of 2+ books, holding 3,640 books; 2,788 fold behind a card
   cards            7,212   what a reader sees of the 10,000
   nophoto covers   3,332   now stored as no cover
-  CF model       499,900   pairs over 9,998 books, 83 s
+  CF model       499,900   pairs over 9,998 books (~95 s)
 starter dry run   7.8 MB   books + CF, no vectors, no Open Library text; 2 min 38 s
 search, 104k rows          a/s/alpha/"steins gate": 149/113/61/14 ms (70/57/31/9 before)
-works rebuild      1.8 s   104k rows (1.1 s before the story groups and Browse order)
+works rebuild      1.7 s   104k synthetic rows (~1.1 s before the Browse order)
 ```
 
 The full build, as the owner measured it on 2026-11-05 *before* these changes:
@@ -141,11 +146,22 @@ search                           "Fullmetal Alchemist": Brotherhood 4th;
                                  "Steins;Gate": the series below four specials
 ```
 
-The after-numbers for the full build need that machine: on a copy of the data,
-`scripts/measure.py --json > before.json`, then `bootstrap.py --only
-idmap_wikidata`, `--only book_goodbooks --only book_openlibrary --only
-music_musicbrainz` (with `HTTP_CACHE_TTL_DAYS=0` to reuse the cache) and
-`--no-ingest`, then `measure.py --json > after.json`.
+Those were counted by hand before `scripts/measure.py` existed; from now on the
+script prints them. The after-numbers for the full build need that machine, on a
+copy of the data (`DATA_DIR` pointed at the copy), in this order:
+
+1. `scripts/measure.py --json > before.json` -- read-only;
+2. `scripts/embed.py --adopt` -- vouch for the old matrix *before* anything
+   relinks, because a work's document folds in its siblings' text and adopting
+   after the twins join would vouch for stale anime vectors;
+3. `bootstrap.py --only book_goodbooks --only book_openlibrary --only
+   music_musicbrainz --only idmap_wikidata` with `HTTP_CACHE_TTL_DAYS=0`, so the
+   cache is reused -- without it the copy keeps `/nophoto/` URLs and no Open
+   Library or Deezer covers;
+4. `bootstrap.py --no-ingest` -- relink and rebuild the derived tables;
+5. `scripts/embed.py` -- re-embeds only the works whose documents changed;
+6. `scripts/measure.py --json > after.json`;
+7. `scripts/starter.py --version v1` -- the pack, from the same copy.
 
 ## Phases
 
@@ -215,7 +231,8 @@ a test that fails without it; the measurements after need the full build (see
    labelled with where they came from.
 
 Found and fixed along the way, mostly by reviewing each step: an anchor query
-whose plan went quadratic (ten minutes on a full-size catalog, now 0.7 s); the
+whose plan went quadratic (over ten minutes on a full-size synthetic catalog,
+now 0.7 s); the
 starter install's ratings guard failing open on a path containing "#";
 Deezer's over-quota answers being cached as "no such artist"; `.env.example`
 overriding MusicBrainz's measured rate; search ranking popularity across domains;
@@ -910,8 +927,10 @@ author" needs no model at all -- only the `links` table Phase 2 already plans.
 
 Text would be the strongest bridge of all: one sentence-embedding model reads an
 anime synopsis and a book blurb into the same space, with no alignment step at
-all. Loom cannot use it yet because the CSV dump ships no synopsis -- which makes
-this the clearest argument yet for a source that carries real text.
+all. When this was written Loom could not use it, because the CSV dump ships no
+synopsis -- the argument for a source that carries real text. (Since done:
+AniList supplies the text and the matrix is built; see "Done: the content
+bridge, and evidence that it works".)
 
 ### Where the synopsis text comes from: AniList
 
@@ -1119,9 +1138,11 @@ neighbour graph over items. Naming the module `similarity_graph` and not
 
 ### The prerequisite: Loom does not know what *you* consume
 
-`ratings` holds 106,402 MAL users. That is training data, not you. Nothing in
-the app records the local user's own library, so "what you consume" has no
-source yet.
+*Since done; see "Done: Loom can be told what you like". Kept as the reasoning.*
+
+`ratings` holds 106,402 MAL users. That is training data, not you. When this
+was written nothing in the app recorded the local user's own library, so "what
+you consume" had no source.
 
 Cheap to fix, and no migration: `user_uid` is already namespaced by dataset via
 `make_user_uid`, so your own ratings are rows under a reserved `local:` prefix
@@ -1164,8 +1185,9 @@ debugging tool for the similarity model that happens to be pleasant to look at.
 
 ## Datasets for the cross-domain half
 
-Loom promises anime / books / music / movies / TV and has only anime. Sizes are
-approximate and unverified — check before committing to one.
+Written when Loom had only anime; all six domains are in now (see "Done: all six
+domains, filtered"), and this table is kept as the survey they were chosen from.
+Sizes are approximate and unverified.
 
 | Domain | Dataset | Ratings? | Rough size | Notes |
 |---|---|---|---|---|
@@ -1247,9 +1269,11 @@ common public ones have it.
 - **Deezer is matched by name.** A same-name artist can lend a wrong picture and
   fan count; MusicBrainz's side of the match is guarded, Deezer's is not.
 
-- **The starter pack and the packaged app are not published.** Both are built and
-  tested; publishing needs the owner's go-ahead, and the Windows package workflow
-  runs once it is on `main` or a `v*` tag is pushed.
+- **The starter pack and the packaged app are not published.** Their code is
+  tested; the pack has only been dry-run on goodbooks-10k (no vectors, no Open
+  Library text) and the app built and smoke-tested on Linux. Publishing needs the
+  owner's go-ahead, and the Windows package workflow runs once it is on `main` or
+  is dispatched by hand.
 
 - ~~Cross-source popularity ordering is wrong.~~ **Resolved**, by calibrating
   on overlap rather than by percentile ranking. See below.

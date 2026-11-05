@@ -6,18 +6,20 @@
 Cross-domain hybrid recommender system (anime / manga / books / music / movies / TV) that runs
 as a local desktop app. No server, no cloud, no admin rights.
 
-**Status: 1.0.** Six domains -- anime, manga, books, music, movies and TV -- from nine
-providers, reconciled across sources (an anime and its own TMDB entry are one work),
-calibrated onto one popularity scale per domain, and grouped into stories (an
-adaptation, its sequels, a book series are one entry in results). Two recommendation
-models -- text embeddings and item-item collaborative filtering -- answer "more like
-this" in the detail view and "for you" from your own ratings, across domains. **970
-tests**, ruff- and mypy-clean, CI on Windows for Python 3.12, 3.13 and 3.14.
+**Status: 1.0 release candidate** (version `1.0.0rc1`, unpublished). Six domains --
+anime, manga, books, music, movies and TV -- from nine providers, reconciled across
+sources (an anime and its own TMDB entry are one work), calibrated onto one popularity
+scale per domain, and grouped into stories (an adaptation, its sequels, a book series
+are one entry in results). Two recommendation models -- text embeddings and item-item
+collaborative filtering -- answer "more like this" in the detail view and "for you" from
+your own ratings, across domains. **970 tests**, ruff- and mypy-clean, CI on Windows for
+Python 3.12, 3.13 and 3.14.
 
-The owner's full build, measured 2026-11-05 before this release's changes: **~84,000
-works** from ~105,000 stored rows (84% with a real synopsis) and **25.1M user ratings**
-(19,172,125 anime, 5,976,479 books). `scripts/measure.py` prints these numbers from any build;
-they are not edited by hand.
+The owner's full build, as last measured before this release's changes (by hand,
+before `scripts/measure.py` existed): **~84,000 works** from ~105,000 stored rows (84%
+with a real synopsis) and **19,172,125 anime ratings**; with goodbooks-10k's
+5,976,479 book ratings (counted here on the same file) that is **25.1M**.
+`scripts/measure.py` now prints these numbers from any build, read-only.
 
 ![Loom's For you tab: manga, a TV series, films, books and anime recommended from seven ratings](docs/screenshots/for-you.png)
 
@@ -57,8 +59,11 @@ uv run python scripts/bootstrap.py --starter   # the starter pack, once one is p
 uv run python scripts/build.py                 # the full build: every source, resumable
 ```
 
-No Python? The **packaged app** (`Loom` and `loom-data` in one folder, built by
-`.github/workflows/package.yml`) runs as is: `loom-data --starter`, then `Loom`.
+No Python? The **packaged app** (`Loom` and `loom-data` in one folder) is built by
+`.github/workflows/package.yml` and will run as is -- `loom-data --starter`, then
+`Loom` -- once a build of it is published. It has been built and smoke-tested on
+Linux only; the Windows build has not run yet. It cannot build embeddings: those
+come prebuilt in the starter pack.
 
 ## Get the data
 
@@ -70,17 +75,19 @@ when a step needs one.
 | Source | What it gives | In the starter pack? | Fetched by the full build | Needs |
 |---|---|---|---|---|
 | [goodbooks-10k](https://github.com/zygmuntz/goodbooks-10k) | 10k books, 6M ratings | **Shipped** (CC BY-SA 4.0); ratings used to train the shipped model, not included as rows | yes, ~2 min | nothing |
-| [Open Library](https://openlibrary.org/) | book synopses, subjects, covers (linked) | **Shipped** (public domain / CC0) | yes, ~1 h at 3 req/s | nothing |
+| [Open Library](https://openlibrary.org/) | book synopses, subjects, covers (linked) | **Shipped**: its data is public domain and contributions CC0, per its FAQ; some descriptions reproduce publisher copy | yes, ~1 h at 3 req/s | nothing |
 | [Wikidata](https://www.wikidata.org/) | MyAnimeList <-> TMDB id pairs | not needed: no anime or TMDB rows ship | yes, one query | nothing |
 | [AniList](https://anilist.co/) | anime and manga, synopses, tags, relations | **no**: its terms forbid hoarding and competing services | yes, ~50 min at 30 req/min | nothing |
-| [MAL Kaggle dump](https://www.kaggle.com/datasets/azathoth42/myanimelist) | 2018 anime table, 19.2M ratings | **no**: scraped from MyAnimeList | yes, ~3 min after a ~2 GB download | a Kaggle login, if Kaggle asks for one |
+| [MAL Kaggle dump](https://www.kaggle.com/datasets/azathoth42/myanimelist) | 2018 anime table, 19.2M ratings | **no**: scraped from MyAnimeList | yes, ~3 min after a ~2 GB download | a Kaggle API token, if Kaggle asks for one |
 | [TMDB](https://www.themoviedb.org/) | films and TV | **no**: no redistribution, 6-month storage limit | yes, ~1 h | **your own free API read token** |
 | [MusicBrainz](https://musicbrainz.org/) + [Deezer](https://www.deezer.com/) | composers credited by TMDB, their tags, pictures (linked) | **no**: the domain is TMDB's composers; tags are CC BY-NC-SA | yes, ~2.5 h at under 1 req/s | TMDB first |
 | Embedding matrix | the content model's vectors | **Shipped** for the pack's works | yes: only works whose text changed | the model downloads once (~67 MB) |
 | Collaborative model | "people who liked this also liked" | **Shipped**, trained on goodbooks ratings only | yes, ~2 min | nothing |
 
-**Not published yet.** The starter pack and the packaged app are built and tested,
-but no GitHub Release exists until the owner publishes one; `bootstrap.py --starter`
+**Not published yet.** The starter pack's builder and installer and the packaged
+app exist and are tested -- the pack only as a dry run on goodbooks-10k, without
+vectors or Open Library text, and the app only on Linux. No GitHub Release exists
+until the owner publishes one; `bootstrap.py --starter`
 says so if you run it before then. Building the pack yourself from a full build:
 `uv run python scripts/starter.py --version v1`, which writes to `DATA_DIR\dist`. A
 vector ships only if its fingerprint matches the pack's own document for that work;
@@ -125,14 +132,16 @@ cd Loom
 uv sync
 ```
 
-`uv sync` reads `uv.lock`, downloads a private CPython (3.12 by default; 3.13 and
-3.14 work too) into `%LOCALAPPDATA%\uv`, creates `.venv`, and installs exact pinned
-versions. Every binary dependency is a prebuilt wheel — nothing needs a compiler,
-so no MSVC build tools are required.
+`uv sync` reads `uv.lock`, downloads a private CPython (3.12 by default; 3.13 and 3.14
+work too; not 3.15, because pythonnet -- pywebview's Windows backend -- declares `<3.15`
+and onnxruntime publishes no 3.15 wheel) into `%LOCALAPPDATA%\uv`, creates `.venv`, and
+installs exact pinned versions. Every binary dependency is a prebuilt wheel — nothing
+needs a compiler, so no MSVC build tools are required.
 
 > If Windows Application Control blocks the Python inside uv's venv, make a stdlib
 > venv (`py -3.12 -m venv C:\loomvenv`), then
-> `uv export --frozen --all-groups --no-hashes > req.txt` and
+> `uv export --frozen --all-groups --no-hashes -o req.txt` (not `> req.txt`: Windows
+> PowerShell 5.1 redirects in UTF-16) and
 > `uv pip install -r req.txt --python C:\loomvenv\Scripts\python.exe`, and run
 > everything with that interpreter.
 
@@ -161,42 +170,43 @@ carries on where it stopped. It starts from what an earlier `bootstrap.py` alrea
 for a TMDB token the first time a TMDB step needs one and for a Kaggle API token
 only if Kaggle refuses the download (both saved to `.env`), re-embeds only works
 whose text changed, and keeps TMDB data under TMDB's six-month limit: it fetches
-TMDB again once it is older, then deletes what the refetch did not renew. `--no-input` never asks and skips what
-it cannot do.
+TMDB again once it is older, then deletes what the refetch did not renew.
+`--no-input` never asks and skips what it cannot do.
 
 `bootstrap.py` is the lower-level tool: it initialises the schema, runs the
 ingesters named in `INGESTERS` (or `--only`), rebuilds the derived tables and prints
 a summary. Idempotent — safe to re-run.
 
-Two sources feed the `anime` domain:
+What each ingester brings. Counts are the owner's build (ROADMAP "Done: all six
+domains", as works per domain); times are `scripts/build.py`'s estimates:
 
-| Ingester | Source | Rows | Cost |
+| Ingester | Source | Owner's build | Cost |
 |---|---|---|---|
-| `anime_mal_csv` | Kaggle MAL dump, static | ~14,478 items | ~2 GB download once, then ~2 s |
-| `anime_jikan` | Jikan v4, live API | up to 2000 items | 3 req/sec limiter |
-| `anime_anilist` | AniList GraphQL, live | ~12.8k items | ~10 min, 30 req/min, no API key |
-| `manga_anilist` | AniList GraphQL, live | ~3.3k items | ~2 min; a second domain |
-| `movie_tmdb` | TMDB, live | ~8k items | ~30 min; **needs a free API credential** |
-| `tv_tmdb` | TMDB, live | ~4k items | ~25 min; same credential |
-| `book_goodbooks` | goodbooks-10k, GitHub CSVs | 10k items | ~4 s, no credential |
-| `music_musicbrainz` | MusicBrainz + Deezer | ~5k artists | hours; MusicBrainz asks 1 req/s |
-| `book_openlibrary` | Open Library | ~9k enriched | ~30 min; the synopses goodbooks lacks |
-| `anime_mal_ratings` | same Kaggle archive | 19.2M ratings | ~75 s, grows the DB to ~1.3 GB |
-| `book_goodbooks_ratings` | goodbooks-10k, GitHub CSV | 6.0M ratings | ~70 s, 72 MB download, no credential |
+| `anime_mal_csv` | Kaggle MAL dump, static | 14,478 anime in the file | ~2 GB download once, then seconds |
+| `anime_anilist` | AniList GraphQL, live | with the dump: 18,764 anime works | ~20 min at 30 req/min, no key |
+| `anime_jikan` | Jikan v4, live API | -- | degraded upstream; not in the full build |
+| `manga_anilist` | AniList GraphQL, live, partitioned by year | 29,034 manga | ~30 min |
+| `movie_tmdb` | TMDB, live | 9,659 films | ~30 min; **needs a free API read token** |
+| `tv_tmdb` | TMDB, live | 9,968 shows | ~25 min; same token |
+| `book_goodbooks` | goodbooks-10k, GitHub CSVs | 10,000 books | seconds, no credential |
+| `book_openlibrary` | Open Library | the synopses and covers goodbooks lacks | ~1 h at 3 req/s |
+| `music_musicbrainz` | MusicBrainz + Deezer | 6,556 composers | ~2.5 h; MusicBrainz asks under 1 req/s |
+| `anime_mal_ratings` | same Kaggle archive | 19,172,125 ratings | ~1.5 min; most of the database's size |
+| `book_goodbooks_ratings` | goodbooks-10k, GitHub CSV | 5,976,479 ratings | ~1.5 min, 72 MB download, no credential |
 | `idmap_wikidata` | Wikidata SPARQL (CC0) | MAL <-> TMDB id pairs | one query; links anime to their TMDB entries |
 
-`anime_mal_ratings` is **not** in the default `INGESTERS` list. It is a one-off
-bulk load of Phase 3's training data rather than part of building the catalog,
-and it turns a 34 MB database into a 1.3 GB one. Run it deliberately:
+The two ratings loaders are not in the default `INGESTERS` list, because they are
+most of a full build's size (the owner's is 2.02 GB with them); the full build runs
+them, and `--only` runs them on their own:
 
 ```powershell
 uv run python scripts/bootstrap.py --only anime_mal_ratings
 ```
 
 `anime_mal_csv` downloads `azathoth42/myanimelist` through kagglehub on first
-run (cached in `~/.cache/kagglehub`, so later runs are offline) and reads only
-the anime table — the multi-GB user-ratings files in that dataset are ignored
-for now. Point `MAL_CSV_PATH` at a local file to skip the download entirely.
+run (cached in `~/.cache/kagglehub`, so later runs are offline); `anime_mal_ratings`
+reads the user lists in the same archive. Point `MAL_CSV_PATH` / `MAL_RATINGS_PATH`
+at local files to skip the download entirely.
 
 > **Jikan is currently degraded** and serves only its warm cache: page 1 of
 > `/top/anime` works, everything deeper 504s, so it contributes ~25 items and
@@ -210,7 +220,7 @@ Useful flags:
 uv run python scripts/bootstrap.py --limit 100          # small run while developing
 uv run python scripts/bootstrap.py --only anime_mal_ratings  # load the 19.2M ratings
 uv run python scripts/bootstrap.py --only book_goodbooks_ratings  # 6M book ratings, no Kaggle
-uv run python scripts/bootstrap.py --no-ingest          # schema only
+uv run python scripts/bootstrap.py --no-ingest          # schema + rebuild the derived tables
 uv run python scripts/bootstrap.py --only anime_mal_csv # skip the live API
 ```
 
@@ -273,9 +283,10 @@ uv sync
 uv run --no-sync pytest
 ```
 
-Consequence worth knowing: the catalog does **not** travel between machines. Each
-machine runs `bootstrap.py` once. That is the intended reproducibility story — the
-repo reproduces the *catalog build*, not the catalog file.
+Consequence worth knowing: the catalog does **not** travel between machines, except
+as a starter pack. Each machine builds its own (`scripts/build.py`): the repo
+reproduces the *catalog build*, and ships only the part of the catalog whose
+licences allow it.
 
 ---
 
@@ -324,7 +335,7 @@ src/recsys/models/       reads the catalog, writes derived artifacts
               text.py    documents -> embedding matrix (parquet)
               similarity.py  brute-force nearest neighbours
               evaluate.py    recall against known adaptation links
-              collaborative.py  item-item CF over 19.2M ratings (parquet)
+              collaborative.py  item-item CF over every rating (parquet)
               profile.py     your ratings -> one taste vector
            schemas.py     UnifiedItem — the one row shape all domains collapse into
            config.py      pydantic-settings, the only reader of the environment
@@ -456,9 +467,9 @@ rows whose ids changed underneath it. `--no-link` skips it.
 
 **An anime and its own TMDB entry are one work, through an exact id map.** TMDB
 files a lot of anime under television and film, so a full build held *Steins;Gate*
-twice, and rating one recommended the other; 625 TMDB shows bore exactly an anime's
-title. TMDB rows carry no MAL id, so `link.py` could not join them -- and an equal
-title is not evidence. Wikidata states the pair exactly (MyAnimeList anime ID P4086
+twice, and rating one recommended the other; the owner counted 625 TMDB shows
+bearing exactly an anime's title. TMDB rows carry no MAL id, so `link.py` could not
+join them -- and an equal title is not evidence. Wikidata states the pair exactly (MyAnimeList anime ID P4086
 beside TMDB TV ID P4983 or movie ID P4947, CC0), so `idmap_wikidata` loads those
 claims into `id_map` and the linker lets a row with no id of its own join the work a
 claim names. A mapped row never represents the work (otherwise *Steins;Gate* would
@@ -492,7 +503,7 @@ sources on one scale; it says nothing across domains, where a Deezer fan count a
 MAL member count measure different things. So the all-domains listing, which has no
 true popularity order, shows works with an image first and lets the domains take
 turns by their own rank. A rank, not a percentile -- which is the
-percentile-within-source trap below in another form. One domain's listing keeps its
+percentile-within-source trap above in another form. One domain's listing keeps its
 plain popularity order.
 
 **The embedding matrix is rebuilt only where text changed.** A full build of it is
@@ -546,15 +557,14 @@ through `textContent` — catalog synopses are third-party text and never touch
 
 ## Where each future phase plugs in
 
+Phases 0-3's first half are done (see ROADMAP). What is left, and where it goes:
+
 | Phase | Work | Touches |
 |---|---|---|
-| 1 | More domains: books (OpenLibrary), movies/TV (TMDB) | one new file in `ingest/` + one line in `registry.py` |
-| 1 | Cross-source id linking | `external_ids` — already populated |
-| 2 | Entity resolution (same work, two sources) | new `links` table via a new migration |
-| 2 | Feature matrices | pyarrow → parquet under `DATA_DIR`, read from `items` |
-| 3 | ~~Content-based and collaborative models~~ **done**; hybrid next | `recsys/models/`, served at `/api/similar` |
-| 3 | ~~User ratings and feedback~~ **done** | `ratings` table, migration 2, `ratings_mal_csv.py` |
-| 3 | ~~Your own library, and cross-domain profile scoring~~ **done** | `models/profile.py`, `/api/ratings` + `/api/library` + `/api/recommend` |
+| 3 | Hybrid: blend content and CF into one ranking | `recsys/models/` -- both halves exist |
+| 3 | Import a MAL/AniList library | one new file in `ingest/` writing `local:` ratings |
+| 4 | Implicit signals (views, dismissals) | a new `events` table via a new migration |
+| 4 | Similarity graph view | `/api/similar` exists; needs a canvas renderer |
 | 4 | Region-aware availability | `REGION` setting — already threaded through config |
 
 The invariant: **adding a domain must not require editing `db.py`, `routes.py`,
@@ -613,7 +623,8 @@ is configured to match; `config.py` is the one place those numbers live.
 | [Jikan](https://jikan.moe/) | Unofficial MyAnimeList API | 3 req/s, 60 req/min | 3 req/s, 60 req/min |
 | [MAL Kaggle dump](https://www.kaggle.com/datasets/azathoth42/myanimelist) | Kaggle's page appears to list ODbL / DbCL; the data is scraped from MyAnimeList — see below | local file, no requests | — |
 | [Wikidata](https://www.wikidata.org/) | **CC0** | one SPARQL query, contact User-Agent | 60 s of query time a minute |
-| [Deezer](https://developers.deezer.com/) | Non-commercial use; images may not be stored, so they are only linked | 8 req/s | 50 per 5 s |
+| [Deezer](https://developers.deezer.com/) | Non-commercial use; images may not be stored, so they are only linked (Deezer's developer terms and FAQ, as read from search results) | 8 req/s | 50 per 5 s (as above) |
+| Goodreads' image server (`images.gr-assets.com`) | goodbooks-10k's cover URLs, only linked | none at ingest | -- |
 | [Open Library covers](https://openlibrary.org/dev/docs/api/covers) | Linked by cover id, never downloaded | none at ingest; the browser loads them | by ISBN: 100 per 5 min; by id: none |
 
 ### TMDB
@@ -621,22 +632,24 @@ is configured to match; `config.py` is the one place those numbers live.
 > This product uses TMDB and the TMDB APIs but is not endorsed, certified, or
 > otherwise approved by TMDB.
 
-TMDB's terms are the most restrictive of the six. The standard licence is
+TMDB's terms are the most restrictive of these. The standard licence is
 non-commercial, forbids storing API data for longer than six months, and names
 operating a recommendation service among the uses that require a separate
 written agreement. Loom is a local, single-user, non-revenue application and no
 TMDB data leaves the machine it was fetched on — but if you intend to run it as
 anything other than that, read
 [their terms](https://www.themoviedb.org/api-terms-of-use) first. TMDB is also
-the only source needing a credential, and it is the only one Loom will refuse to
-run without.
+the only source that always needs a credential (Kaggle may ask for an API token),
+and the only one Loom will refuse to run without.
 
 How Loom keeps to the two clauses the audit could not settle from code alone: the
 notice above is shown in the app's own footer, as the terms require (TMDB's logo is
-not, yet); and **TMDB data is kept under six months old** -- `scripts/build.py`
+not, yet); and **the full build keeps TMDB data under six months old** -- `scripts/build.py`
 counts a TMDB step older than `TMDB_MAX_AGE_DAYS` (180) as not done and fetches it
 again and then deletes the TMDB rows and cached responses the refetch did not
-renew, and no TMDB row ever goes into the starter pack. The "recommendation-based
+renew, and no TMDB row ever goes into the starter pack. That holds when you run the
+full build; a catalog built once with `bootstrap.py` and never rebuilt ages like any
+other file, and deleting it, or running `build.py` again, is yours to do. The "recommendation-based
 services" clause names operated services; Loom is a local, single-user app, and
 that reading is the owner's, not TMDB's.
 
@@ -675,13 +688,14 @@ Two known tensions, stated plainly rather than buried:
 - `book_openlibrary` makes roughly one hundred batch calls to resolve ISBNs and
   then **one request per book** — about ten thousand for a full run. Open Library
   asks bulk consumers to use their monthly dumps. Responses are cached, the full
-  build makes them once, and the starter pack ships the result so that most people
-  never make them at all; the dump (~3 GB of works) remains the honest fix and is
+  build makes them once, and a published starter pack would carry the result so
+  that most people never make them at all; the dump (~3 GB of works) remains the honest fix and is
   deferred (ROADMAP).
-- AniList's current terms prohibit "hoarding or mass collection of data from the
-  AniList API" and use "within competing, non-complementary services ... including
-  anime and manga list or tracker services". A full build's partitioned sweep
-  (about 45,000 records) is mass collection by any reading. Nothing from AniList is
+- AniList's current terms (AniList/docs, `docs/guide/terms-of-use.md`, 2026-08-17)
+  prohibit "hoarding or mass collection of data from the AniList API" and use
+  "within competing, non-complementary services ... including anime and manga list
+  or tracker services". A full build's partitioned sweep (29,034 manga alone on
+  the owner's build) is mass collection by any reading. Nothing from AniList is
   redistributed, but whether to keep the sweep, narrow AniList to enriching the MAL
   ids already held, or ask AniList is the owner's decision (ROADMAP).
 
@@ -693,5 +707,6 @@ Loom's code is released under the [MIT License](LICENSE). The licence covers the
 code only: data fetched from the sources above stays under each source's own
 terms, and the goodbooks-10k sample in `tests/fixtures/goodbooks/` is CC BY-SA 4.0.
 A starter pack carries its own `ATTRIBUTION.md`: its goodbooks-derived rows,
-vectors and neighbours are shared under CC BY-SA 4.0, and its Open Library text is
-public domain.
+vectors and neighbours are shared under CC BY-SA 4.0, with the changes made listed,
+and its Open Library text under Open Library's terms (public domain / CC0 per its
+FAQ; some descriptions reproduce publisher copy).
