@@ -1,97 +1,112 @@
-# CLAUDE.md
-
-Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
-
-**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
-
-## 1. Think Before Coding
-
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
-
-Before implementing:
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
-
-## 2. Simplicity First
-
-**Minimum code that solves the problem. Nothing speculative.**
-
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
-
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
-
-## 3. Surgical Changes
-
-**Touch only what you must. Clean up only your own mess.**
-
-When editing existing code:
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it - don't delete it.
-
-When your changes create orphans:
-- Remove imports/variables/functions that YOUR changes made unused.
-- Don't remove pre-existing dead code unless asked.
-
-The test: Every changed line should trace directly to the user's request.
-
-## 4. Goal-Driven Execution
-
-**Define success criteria. Loop until verified.**
-
-Transform tasks into verifiable goals:
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
-
-For multi-step tasks, state a brief plan:
-```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
-```
-
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
-
----
-
-**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
-
----
-
-# Project-specific: Loom
+# CLAUDE.md -- Loom
 
 Cross-domain hybrid recommender (anime / manga / books / music / movies / TV), local
-desktop app, no admin rights. See `README.md` for architecture and `ROADMAP.md`
-for what comes next.
+desktop app, no admin rights. `README.md` holds the architecture and its "Why these
+choices"; `ROADMAP.md` holds where the project is and what comes next.
+
+**Status (2026-11-05):** 1.0 release candidate on `claude/sweet-ride-u2k95y`. The
+seven bugs measured on the full build are fixed with regression tests; the starter
+pack, the resumable full build (`scripts/build.py`) and the PyInstaller package are
+built and tested, none published. Numbers in the docs come from `scripts/measure.py`.
+Waiting on the owner: a measurement of the full build with this code, and approval
+to publish the starter pack.
+
+## Rules
+
+- **Identity:** commit only as the personal GitHub noreply identity,
+  `JoaoCarlos134 <93523542+JoaoCarlos134@users.noreply.github.com>`, set in
+  `.git/config`. Never an employer address. Never rewrite history, never
+  force-push `main`, never push the pre-rewrite branches (the old history is
+  kept in the private `Loom-old`).
+- **Data never in the repo.** The catalog, caches, models and packs live in
+  `DATA_DIR` (`%LOCALAPPDATA%\Loom`); test fixtures of a few records are the
+  only data committed.
+- **English** in code, comments, docs and commit messages.
+- **One bug or feature per commit, test first**, and each test must fail
+  without the change it covers. Commit messages end with the Co-Authored-By line.
+- **Ask before anything that publishes** (releases, packages, tags) or needs
+  the owner's accounts.
+- **Measure, don't edit numbers.** A number in README/ROADMAP is one
+  `scripts/measure.py` printed; the owner's full build is opened read-only for
+  that, and anything that writes runs against a copy or a fresh `DATA_DIR`.
 
 ## Commands
 
 ```powershell
-uv sync                                       # install from uv.lock
-uv run pytest                                 # 778 tests, none touch the network
-uv run python scripts/bootstrap.py            # init schema + run ingesters
-uv run python scripts/bootstrap.py --only anime_mal_csv --limit 100
-uv run python scripts/bootstrap.py --only anime_mal_ratings   # 19.2M ratings, ~75 s
-uv run python scripts/bootstrap.py --only book_goodbooks_ratings  # 6M ratings, GitHub, ~70 s
-uv run python scripts/bootstrap.py --only manga_anilist        # 2nd domain, ~2 min
-uv run python scripts/bootstrap.py --only movie_tmdb --only tv_tmdb  # needs TMDB creds
+uv sync                                       # install from uv.lock (Python 3.12-3.14)
+uv run pytest                                 # every test; none touch the network
+uv run python scripts/build.py                # the full build, resumable (--status)
+uv run python scripts/bootstrap.py --starter  # install the starter pack instead
+uv run python scripts/bootstrap.py            # init schema + run INGESTERS
 uv run python scripts/bootstrap.py --only book_goodbooks       # 10k books, ~4 s
-uv run python scripts/bootstrap.py --only music_musicbrainz    # composers, 1 req/s
+uv run python scripts/bootstrap.py --only idmap_wikidata       # anime <-> TMDB ids
+uv run python scripts/bootstrap.py --no-ingest                 # relink + rebuild derived
 uv run python scripts/bootstrap.py --no-ingest --prune-dry-run # what filters reject
-uv run python scripts/embed.py                # build the embedding matrix, ~2.5 h
+uv run python scripts/embed.py --check        # is the matrix current? embeds nothing
+uv run python scripts/embed.py --adopt        # vouch for a pre-fingerprint matrix, once
+uv run python scripts/embed.py                # embed only what changed (--full: all)
 uv run python scripts/embed.py --evaluate     # score it against adaptation links
-uv run python scripts/cf.py                   # item-item CF from 19.2M ratings, ~2 min
-uv run python scripts/cf.py --evaluate        # held-out recall vs a popularity baseline
+uv run python scripts/cf.py                   # item-item CF, ~2 min; --evaluate
+uv run python scripts/measure.py              # the docs' numbers, read-only
+uv run python scripts/starter.py --version v1 # build a starter pack (does not publish)
 uv run python app.py                          # native window (--browser, --no-ui)
+uv sync --group package; uv run pyinstaller packaging/loom.spec --noconfirm
 ```
+
+### When Windows Application Control blocks uv's venv
+
+On the home machine, Application Control refuses the Python inside a
+uv-created venv. Use a stdlib venv and install into it with uv:
+
+```powershell
+py -3.12 -m venv C:\loomvenv
+uv export --frozen --all-groups --no-hashes > req.txt
+uv pip install -r req.txt --python C:\loomvenv\Scripts\python.exe
+C:\loomvenv\Scripts\python.exe -m pytest
+C:\loomvenv\Scripts\python.exe -m ruff check .
+C:\loomvenv\Scripts\python.exe -m mypy
+```
+
+If an import then fails with "Uma política de Controle de Aplicativo bloqueou",
+that binary wheel is blocked too: pin an older version of that package in the
+stdlib venv only.
+
+## Decisions (newest first)
+
+- **2026-11-05 Starter pack = shareable sources only** (goodbooks-10k, Open
+  Library); MusicBrainz left out with TMDB, since that domain is TMDB's
+  composers. See README "Get the data" and ROADMAP Priority 1.
+- **2026-11-05 Search fuses title match and per-domain popularity by
+  reciprocal rank (k=60)**, exact titles first. README "Why these choices".
+- **2026-11-05 Browse opens covers-first, domains interleaved by their own
+  rank** -- no cross-domain popularity scale exists. README "Why these choices".
+- **2026-11-05 One entry per story:** groups are components of adaptation,
+  franchise and series edges, capped at `MAX_GROUP_SIZE` (provisional); book
+  series fold behind one card (`FOLD_BOOK_SERIES`). ROADMAP "Done: 1.0".
+- **2026-11-05 Anime <-> TMDB twins linked through Wikidata's id map**, a
+  sibling contract; mapped rows never represent a work. README "Why these choices".
+- **2026-11-05 Embedding vectors carry document fingerprints**; rebuilds are
+  incremental. ROADMAP "Known issues".
+- **2026-11-05 Python 3.12-3.14** (`<3.15`: pythonnet and onnxruntime have no
+  3.15 wheels); CI tests all three on Windows.
+- **2026-11-04 MIT licence**, and the repo recreated with clean history.
+  ROADMAP Priority 1.
+- **2026-09 Calibrate popularity on overlap, not percentile-within-source.**
+  README "Why these choices".
+- **2026-08 Resolve duplicates with `links`, never merge.** README "Why these choices".
+
+## Where to continue
+
+1. Measure the full build with this code (on a copy): `scripts/measure.py`,
+   `bootstrap.py --only idmap_wikidata`, `bootstrap.py --no-ingest`, then
+   `measure.py` again; put the before/after into README and ROADMAP.
+2. Set `MAX_GROUP_SIZE` from the largest groups that measurement prints.
+3. Build the starter pack from the full build: `scripts/embed.py --adopt` once
+   (the matrix predates fingerprints; only vectors whose fingerprint matches the
+   pack's own documents ship), then `scripts/starter.py --version v1`; with the
+   owner's approval, publish it and pin `STARTER_SHA256`.
+4. Run `.github/workflows/package.yml` once it is on `main`.
+5. ROADMAP "Next step": blend the two models; import a MAL/AniList library.
 
 ## The one architectural invariant
 
@@ -111,7 +126,8 @@ loader is not fetch → `UnifiedItem` → `upsert_items` in any of its three par
 `ratings_mal_csv.py` shares `IngestResult` and the `ingest_runs` row, duplicates
 the ~20-line batching loop, and satisfies the `IngestRunner` Protocol in
 `ingest/base.py` — which is what keeps `bootstrap.py` and `registry.py`
-indifferent to which kind they hold. Same three-step seam either way.
+indifferent to which kind they hold. Same three-step seam either way;
+`idmap_wikidata.py` is the second kind (identity claims into `id_map`).
 
 ## Rules that are easy to violate
 
@@ -121,6 +137,10 @@ indifferent to which kind they hold. Same three-step seam either way.
   `count_items` show only that one. `get_item` still reaches any row by uid,
   and `link.work_members()` returns a work's full set — Phase 3 wants the
   union (AniList's text plus the dump's 2018 counts), not just the winner.
+  A row with no id of its own may join a work through an `id_map` claim
+  (Wikidata's MAL <-> TMDB pairs): exact ids only, never a work from claims
+  alone, a claim naming several works refused, and a mapped row never
+  represents the work.
 
 - **The linker ranks rows by content, never by source name.** A source-preference
   list in `link.py` or `db.py` would mean editing them to add a source, which the
@@ -158,8 +178,12 @@ indifferent to which kind they hold. Same three-step seam either way.
   throws out *Metropolis*, and a language filter mostly encodes a bias toward
   English. `tests/test_prune.py` pins the old-but-well-rated case.
 
-- **`prune.py` is the only code that deletes *catalog* rows.** Everything else
-  upserts; `link.py` hides duplicates without touching them and `popularity.py`
+- **`prune.py` is the only code that deletes *catalog* rows.** (The starter
+  pack builder drops ratings from the *pack's own copy*, and `--starter`
+  replaces a database file only when it holds none of your ratings; neither
+  touches rows of a catalog in use.) Its one rule that runs without a dry
+  run is `prune.expire`, which the full build calls every time to delete TMDB
+  data kept past TMDB's six-month limit -- the terms require it. Everything else upserts; `link.py` hides duplicates without touching them and `popularity.py`
   writes a second opinion beside the source datum. Pruning never runs as part of
   a normal bootstrap, defaults to a dry run, and reports before it acts. After
   it runs, every derived table -- `links`, `popularity_norm`, `works`,
@@ -176,8 +200,9 @@ indifferent to which kind they hold. Same three-step seam either way.
   both cases silently as far as coverage goes. `partition_by_year` walks one
   start-year at a time so no single listing is deep enough to hit the ceiling.
 
-- **Credentials live in `.env` and nowhere else.** TMDB is the only source
-  needing one. Prefer `TMDB_READ_TOKEN` (v4): it goes in an `Authorization`
+- **Credentials live in `.env` and nowhere else.** TMDB needs one; Kaggle
+  sometimes does (`KAGGLE_API_TOKEN`, handed to kagglehub through the variable
+  it reads), and `scripts/build.py` asks for either only when a step needs it. Prefer `TMDB_READ_TOKEN` (v4): it goes in an `Authorization`
   header, so it never reaches a URL. A v3 `api_key` is a query parameter, and
   `DiskCache` writes the string it is keyed on into every envelope -- so
   `TmdbIngester._cache_key` strips it. Never put a real credential in
@@ -194,9 +219,21 @@ indifferent to which kind they hold. Same three-step seam either way.
   an empty shelf on a populated database is the worst way for a cache to fail.
 
 - **`relations` is not `links`.** `links` means "these rows are the same work".
-  An adaptation or a sequel is the opposite claim -- two different works, one
-  story -- so the AniList relation edges get their own table. Never collapse
-  them onto `links`, and never assume an edge's far side is in the catalog.
+  An adaptation, a sequel or a series volume is the opposite claim -- two
+  different works, one story -- so those edges get their own table (AniList's
+  from `raw_json`, `SERIES` read off Goodreads titles). Never collapse them
+  onto `links`, and never assume an edge's far side is in the catalog. Results
+  use them through `works.group_uid` -- connected components, capped at
+  `MAX_GROUP_SIZE` -- to suppress the query's own story and keep one entry
+  per story; listings fold a book series behind one card.
+
+- **The embedding matrix is a snapshot; reads must not trust its uids.** It
+  holds the representatives of the day it was built. `/api/similar` and
+  `/api/recommend` exclude rows that have since lost their primary election
+  *before* the top-k and translate every neighbour through
+  `link.representative_uid`. Each vector carries a fingerprint of its
+  document and model, so `embed.py` re-embeds only what changed; a matrix from
+  before fingerprints is kept and reported as unverified, never as fresh.
 
 - **Your ratings are resolved onto the work, not the row you clicked.**
   `set_rating` runs the uid through `link.representative_uid` before storing it,
@@ -225,6 +262,12 @@ indifferent to which kind they hold. Same three-step seam either way.
 - **Migrations are append-only.** Add a new entry to `MIGRATIONS` in `db.py`;
   never edit a shipped one. `PRAGMA user_version` tracks what has been applied.
 
+- **Licences decide what ships.** `starter.SHIPPABLE` is the one list of
+  (domain, source) pairs a starter pack may contain, each with the terms that
+  allow it. TMDB, AniList, the MAL Kaggle dump and Jikan never go in it.
+  Nothing is published (a release, a package, a pushed tag) without the
+  owner's explicit go-ahead.
+
 - **Everything is UTF-8; Windows is not.** Python's `open()` defaults to cp1252
   here and dies on the first Japanese title. Always pass `encoding="utf-8"`
   explicitly, and set `PYTHONIOENCODING=utf-8` before printing non-ASCII.
@@ -238,7 +281,11 @@ indifferent to which kind they hold. Same three-step seam either way.
   list-adds). `recsys/popularity.py` calibrates it onto one scale by fitting a
   monotone curve on works that two sources both carry, and stores the result in
   `popularity_norm`; reads order by that. `mean_rating` needs none of this --
-  each ingester rescales it to 0–10 at ingest.
+  each ingester rescales it to 0–10 at ingest. **Calibration is per domain.**
+  Across domains there is no shared scale (Deezer fans against MAL members), so
+  anything that compares domains -- the all-domains Browse order, search's
+  popularity rank, sharing a figure within a cross-domain work -- ranks within
+  each domain instead.
 
 - **Do not "fix" cross-source ranking with percentile-within-source.** It is the
   obvious move and it is wrong: it assumes every source samples the same

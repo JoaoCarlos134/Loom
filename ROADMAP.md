@@ -53,44 +53,41 @@ public.
       GitHub still served the old commits by SHA, so the repo was recreated with
       only the clean history; the old one is the private `Loom-old`.
 
-### Needs the machine that has credentials and data
+### Needs the machine that has credentials and data -- closed or deferred for 1.0
 
-- [ ] **Verify the TMDB attribution renders and is accurate** against a real
-      key, and decide how to handle two clauses the audit could not resolve from
-      code alone: TMDB forbids storing API data beyond **6 months** (Loom's
-      SQLite rows are permanent; `HTTP_CACHE_TTL_DAYS=30` covers only the HTTP
-      cache), and names "operating recommendation-based services" as commercial
-      use requiring a separate agreement. A local personal app is a different
-      thing from an operated service, but the terms do not say so.
-- [ ] **Re-time `book_openlibrary` at 3 req/s** and confirm the ingest still
-      completes in a sane window. Separately, weigh the harder question: Open
-      Library explicitly discourages "making hundreds of single-book requests"
-      and points bulk users at their monthly data dumps, while this ingester
-      makes ~100 batch calls **plus one `/works/` request per book** — roughly
-      10,000 individual requests. Defensible as a one-off personal build,
-      genuinely against the spirit of their guidance as a documented workflow.
-      Switching to the monthly dump would remove the tension entirely.
-- [ ] **Settle the MAL Kaggle dump's licence.** `azathoth42/myanimelist` states
-      no licence the audit could find; the Kaggle page is JS-rendered, and the
-      author's companion repo names none. The data is scraped from
-      MyAnimeList.net, so upstream terms may apply independently. Exposure is
-      small — 4 anime rows and 11 ratings are committed as fixtures, and the
-      code only *references* the dataset — but it is unresolved.
-
-### Presentation polish
-
-- [x] `pyproject.toml` declares `license = "MIT"`; `authors` and
-      `[project.urls]` are filled in.
-- [x] `PHASE0_TODO.md` was a stale internal status file (229 tests, a
-      14,503-item catalog). It moved to `docs/history/PHASE0.md` under a banner
-      saying it is a snapshot; the Jikan endpoint matrix in it is still cited below.
-- [ ] `CLAUDE.md` ships publicly and advertises AI-assisted development. Plenty
-      of repos ship one; it is a preference, not a problem.
-- [ ] One AniList clause worth knowing rather than acting on: their terms
-      prohibit use "within competing, non-complementary services of the same
-      nature, including anime and manga list or tracker services". Loom is
-      cross-domain and local-only, but the library added in Phase 3 makes it
-      more list-shaped than it was.
+- [x] **TMDB attribution and the 6-month clause: closed in code.** The required
+      notice is shown in the app's own footer (word for word, pinned by
+      `tests/test_ui.py`), not only in the README. The six-month storage limit
+      is kept by the full build: `scripts/build.py` counts a TMDB step older
+      than `TMDB_MAX_AGE_DAYS` (180) as not done and fetches it again, then
+      deletes (`prune.expire`) the TMDB rows and cached responses the refetch
+      did not renew; no TMDB row ever reaches the starter pack. Still open, and the owner's to
+      decide: TMDB's logo (it has to be committed as a file, and could not be
+      fetched from the build machine), and whether a local single-user app is
+      an "operated recommendation service" -- the terms do not say.
+- [ ] **Open Library per-book requests versus their monthly dump: deferred.**
+      The dump is the honest fix and is a new ingester reading ~3 GB of
+      `ol_dump_works`; it is deferred because the cost the guidance is about is
+      now paid once: responses are cached, the full build makes them once, and
+      the starter pack ships the result, so a stranger makes none at all. The
+      rate stays 3 req/s, Open Library's documented ceiling for identified
+      clients; re-timing it needs the network the build machine did not have.
+- [x] **The MAL Kaggle dump's licence: settled as "not ours to ship".** Kaggle's
+      page appears to list ODbL / DbCL (seen in search results; the page could
+      not be opened from the build machine), but the data is scraped from
+      MyAnimeList, and an uploader's licence cannot clear MAL's terms. So it is
+      never redistributed: each user downloads it through their own Kaggle
+      account, as before, and the README says both things.
+- [ ] **The AniList clause: deferred, and it is the owner's decision.** AniList's
+      current terms (AniList/docs, 2026-08-17) prohibit "hoarding or mass
+      collection of data from the AniList API" and use "within competing,
+      non-complementary services ... including anime and manga list or tracker
+      services", for all data. Loom is local and redistributes nothing from
+      AniList, but a full build's partitioned sweep (~45k records) is mass
+      collection by any reading, and the library makes the app more list-shaped.
+      The options are to keep it, to narrow AniList to enriching the MAL ids the
+      dump already holds (losing post-2018 anime and most manga), or to ask
+      AniList. Not decided here.
 
 ### What the audit found clean, and does not need rechecking
 
@@ -108,32 +105,47 @@ documented 3 req/s and 60 req/min. A stranger's `git clone` → `uv sync` →
 
 ## Where we are
 
-**Phases 0 through 2 are complete**, and both halves of Phase 3's model layer
-are built. Schema, ingest, API, UI, desktop window, two recommendation models
-and 766 tests, across six populated domains with a ratings matrix behind the
-largest.
+**1.0.** The seven bugs measured on the full build are fixed, each with a
+regression test that fails without the fix; a stranger can have a catalog in
+seconds (goodbooks-10k, no credentials), the starter pack in a minute once it is
+published, and the full build through one resumable command; and the app is
+packaged for people without Python.
+
+Measured in this release's session (2026-11-05), on what the build machine could
+reach -- the goodbooks-10k files from GitHub and synthetic catalogs; it could not
+reach TMDB, AniList, Kaggle, Wikidata, Open Library, MusicBrainz, Deezer or the
+embedding model:
+
+```
+tests                970   none touch the network; CI on Windows, Python 3.12-3.14
+goodbooks-10k     10,000   books, 5,976,479 ratings (58 s to load)
+  book series        852   of 2+ books, holding 3,640 books; 2,788 fold behind a card
+  cards            7,212   what a reader sees of the 10,000
+  nophoto covers   3,332   now stored as no cover
+  CF model       499,900   pairs over 9,998 books, 83 s
+starter dry run   7.8 MB   books + CF, no vectors, no Open Library text; 2 min 38 s
+search, 104k rows          a/s/alpha/"steins gate": 149/113/61/14 ms (70/57/31/9 before)
+works rebuild      1.8 s   104k rows (1.1 s before the story groups and Browse order)
+```
+
+The full build, as the owner measured it on 2026-11-05 *before* these changes:
 
 ```
 catalog        83,981 works      six domains, from 105,161 stored rows
-  manga:anilist   29,054 rows    live GraphQL, partitioned sweep
-  anime:anilist   16,372 rows    synopses + ranked tags
-  anime:mal       14,478 rows    Kaggle MAL dump, static 2018 snapshot
-  book:goodbooks  10,000 rows    ratings and shelves, no prose
-  tv:tmdb          9,968 rows    vote floor 25
-  movie:tmdb       9,659 rows    vote floor 50
-  book:openlibrary 9,049 rows    the prose goodbooks lacks
-  music:musicbrainz 6,556 rows   credited composers
-  anime:jikan         25 rows    still capped: warm cache only, see below
-synopsis coverage  84.4%         of works, across all six domains
-relations      57,453 edges      16,524 adaptations + 27,928 franchise
-ratings    19,172,125 ratings    106,402 users x 6,598 anime, scores 1-10
-tests             766            none touch the network or %LOCALAPPDATA%
+ratings    25,148,604 ratings    19,172,125 anime (MAL) + 5,976,479 books (goodbooks,
+                                 the same file's count measured here); "25.2M" in
+                                 older docs added two rounded figures
+twins             625            TMDB TV titles exactly equal to an anime's
+music covers  0 / 6,556          books without a cover: 12,381 of 19,049 rows
+search                           "Fullmetal Alchemist": Brotherhood 4th;
+                                 "Steins;Gate": the series below four specials
 ```
 
-Two recommendation models: content embeddings and item-item CF, both
-reachable at `/api/similar/{item_uid}`.
-
----
+The after-numbers for the full build need that machine: on a copy of the data,
+`scripts/measure.py --json > before.json`, then `bootstrap.py --only
+idmap_wikidata`, `--only book_goodbooks --only book_openlibrary --only
+music_musicbrainz` (with `HTTP_CACHE_TTL_DAYS=0` to reuse the cache) and
+`--no-ingest`, then `measure.py --json > after.json`.
 
 ## Phases
 
@@ -155,15 +167,60 @@ reachable at `/api/similar/{item_uid}`.
 | **3** | Content-based similarity | `recsys/models/` -- embeddings + evaluation | **done** |
 | **3** | Collaborative models (within-domain) | `models/collaborative.py`, `/api/similar?method=cf` | **done** |
 | **3** | Hybrid: blend content and CF into one ranking | `recsys/models/` -- both halves now exist | next |
+| **1.0** | Anime <-> TMDB twins, one work | `idmap_wikidata`, `id_map` (migration 7) | **done** |
+| **1.0** | One entry per story; book series | `relations` SERIES, `works` groups (migration 8) | **done** |
+| **1.0** | Search: exact titles, fused popularity | `db.query_items`, `works` keys (migration 10) | **done** |
+| **1.0** | Covers; Browse opens on them | ingesters, `works.browse_rank` (migration 9) | **done** |
+| **1.0** | "More like this" in the detail view | `ui/app.js` | **done** |
+| **1.0** | Starter pack, full build, packaged app | `starter.py`, `build.py`, `packaging/` | **done**, unpublished |
 | **3** | Your own library — rate things | `ratings` table, `local:` user namespace — no migration | **done** |
 | **3** | Import an existing library (MAL/AniList export) | new file in `ingest/`, writes `local:` rows | solves cold start |
 | **3** | Canonical tag vocabulary | authored file in repo + feature-build layer | bridge, step 1 |
 | **3** | Cross-domain profile scoring | `models/profile.py`, `/api/recommend` | **done** |
 | **4** | Implicit signals (views, dismissals) | new `events` table via a new migration | decide explicitly |
-| **4** | Similarity graph view | `/api/similar/{uid}` exists; needs the canvas renderer | half |
+| **4** | Similarity graph view | `/api/similar/{uid}` and the detail row exist; needs the canvas renderer | half |
 | **4** | Region-aware availability | `REGION` setting — already threaded through | — |
 
 ---
+
+## Done: 1.0
+
+What each bug was, as measured on the full build, and what fixed it. Every fix has
+a test that fails without it; the measurements after need the full build (see
+"Where we are").
+
+1. **Anime and their TMDB entries were separate works** (625 TMDB shows titled
+   exactly like an anime; rating *Steins;Gate* recommended its TV twin).
+   `idmap_wikidata` loads Wikidata's exact MAL <-> TMDB claims into `id_map`;
+   `link.py` joins a TMDB row to the anime work a single claim names, never as its
+   representative. Reads exclude rows that lost their primary election before the
+   top-k, so a matrix built before linking cannot answer with a twin.
+2. **Adaptations and sources both appeared; book volumes were separate**
+   (PLUTO's anime for PLUTO's manga; Death Note eight times). Story groups --
+   components of adaptation, franchise and series edges -- are suppressed for
+   what you asked about or rated, and collapsed to one work in results; book
+   series fold behind their most read volume (852 series, 2,788 volumes, on the
+   real books.csv).
+3. **Search ordered by bm25 alone.** Exact titles first, then reciprocal rank
+   fusion of title fit and per-domain calibrated popularity.
+4. **Missing covers** (all music; 12,381 book rows; Browse opened on music).
+   Deezer pictures from the answer already fetched, Open Library covers by id
+   from data already fetched, "nophoto" treated as none; Browse leads with
+   covers and interleaves the domains.
+5. **The UI never called `/api/similar`.** A "More like this" row (content, and
+   CF where it has an answer) closes the detail view.
+6. **`requires-python <3.13` with no reason recorded.** Widened to `<3.15` with
+   no package version changing; one real 3.14 difference fixed; CI tests all three.
+7. **Stale numbers.** `scripts/measure.py`; the numbers above are its, or
+   labelled with where they came from.
+
+Found and fixed along the way, mostly by reviewing each step: an anchor query
+whose plan went quadratic (ten minutes on a full-size catalog, now 0.7 s); the
+starter install's ratings guard failing open on a path containing "#";
+Deezer's over-quota answers being cached as "no such artist"; `.env.example`
+overriding MusicBrainz's measured rate; search ranking popularity across domains;
+a failed collaborative build later reported fresh; loading the old matrix taking
+10.7 s and 1.75 GB (now 1.5 s).
 
 ## Done: the content bridge, and evidence that it works
 
@@ -719,7 +776,7 @@ thin the profile actually is.
 
 A real measurement waits on a real library, which waits on a catalog build.
 
-## Next step, and why
+## Next step, and why (after 1.0)
 
 **Blend the two models.** `content` reaches *Steins;Gate 0* and *Robotics;Notes*
 from *Steins;Gate*, `cf` reaches *Fullmetal Alchemist* and *Fate/Zero* -- they
@@ -1173,12 +1230,26 @@ common public ones have it.
   rows already come from their text source, which simply has none), tv 93.
   Only the anime slice is recoverable at all.
 
-- **The embedding matrix is exactly current and must not be rebuilt casually.**
-  Verified 2026-08-30: 83,981 vectors against 83,981 works, zero missing and
-  zero orphaned. `build_embeddings` replaces the file wholesale -- there is no
-  incremental path -- so a rebuild costs the full ~2.5 h and would have produced
-  an identical file. Check staleness before paying for it, and batch every
-  document-changing job behind a single rebuild.
+- **The full build's embedding matrix predates fingerprints.** Verified
+  2026-08-30 as exactly current (83,981 vectors, zero missing or orphaned), and
+  `embed.py` now rebuilds only works whose document changed -- but this matrix
+  has no fingerprints, so its vectors are kept and reported as *unverified*.
+  Linking the TMDB twins changes those anime works' documents (they gain TMDB's
+  keywords); `embed.py --check` reports the state. `embed.py --adopt` vouches
+  for the vectors as they are (right for the books a starter pack ships, whose
+  documents did not change), and one `--full` run (~2.5 h) makes every vector
+  verifiable.
+
+- **`MAX_GROUP_SIZE` (250) is provisional.** It keeps a chain of crossovers from
+  making one giant "story" that suppresses unrelated works; it has not been set
+  from the full build's group sizes, which `bootstrap.py` and `measure.py` print.
+
+- **Deezer is matched by name.** A same-name artist can lend a wrong picture and
+  fan count; MusicBrainz's side of the match is guarded, Deezer's is not.
+
+- **The starter pack and the packaged app are not published.** Both are built and
+  tested; publishing needs the owner's go-ahead, and the Windows package workflow
+  runs once it is on `main` or a `v*` tag is pushed.
 
 - ~~Cross-source popularity ordering is wrong.~~ **Resolved**, by calibrating
   on overlap rather than by percentile ranking. See below.
