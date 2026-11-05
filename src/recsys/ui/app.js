@@ -466,8 +466,81 @@
       loadSeries(series, item.item_uid);
 
       inner.appendChild(main);
-      els.detailBody.replaceChildren(inner);
-      els.detail.showModal();
+
+      // Below the detail, full width: works like this one, from both models.
+      var more = el("section", "more");
+      loadMoreLikeThis(more, item.item_uid);
+
+      els.detailBody.replaceChildren(inner, more);
+      els.detailBody.scrollTop = 0;
+      if (!els.detail.open) els.detail.showModal();
+    });
+  }
+
+  /* A compact card for a row of neighbours. Opening one replaces the dialog's
+   * content, so a reader can walk from work to work. */
+  function makeMini(item) {
+    var b = el("button", "mini");
+    b.type = "button";
+    b.setAttribute("aria-label", item.title);
+    var thumb = el("div", "mini-thumb");
+    if (item.image_url) {
+      var img = el("img");
+      img.loading = "lazy";
+      img.alt = "";
+      img.src = item.image_url;
+      img.addEventListener("error", function () {
+        thumb.replaceChildren(el("div", "placeholder", "no image"));
+      });
+      thumb.appendChild(img);
+    } else {
+      thumb.appendChild(el("div", "placeholder", "no image"));
+    }
+    b.appendChild(thumb);
+    b.appendChild(el("div", "mini-title", item.title));
+    b.appendChild(el("div", "mini-meta", item.year ? item.domain + " · " + item.year : item.domain));
+    b.addEventListener("click", function () { openDetail(item.item_uid); });
+    return b;
+  }
+
+  /* "More like this": the core feature, which the UI never used to call.
+   *
+   * Two rows, because the two models fail differently. Content compares what
+   * works are about and crosses domains -- an anime's nearest novel is the
+   * point. Collaborative filtering compares who rated what, and only knows the
+   * domains its ratings corpus covers (anime and books), so its row appears
+   * only where it has an answer. Neither request names a domain or asks for
+   * the work's own story: the API leaves out its adaptations, sequels and
+   * series volumes, and keeps one entry per story. */
+  function loadMoreLikeThis(section, uid) {
+    var path = "/api/similar/" + encodeURIComponent(uid) + "?k=12";
+    addNeighbourRow(section, "More like this", path, true);
+    addNeighbourRow(section, "People who liked this also liked", path + "&method=cf", false);
+  }
+
+  function addNeighbourRow(section, title, path, explainFailure) {
+    var wrap = el("div", "neighbours");
+    section.appendChild(wrap);
+    api(path).then(function (body) {
+      if (!body.neighbours.length) {
+        if (explainFailure) wrap.appendChild(el("p", "muted", "No similar works found."));
+        return;
+      }
+      wrap.appendChild(el("h3", "row-title", title));
+      var row = el("div", "mini-row");
+      body.neighbours.forEach(function (n) {
+        row.appendChild(makeMini(n.item));
+      });
+      wrap.appendChild(row);
+    }).catch(function (err) {
+      // 503: the model is not built. 409: this work is newer than the matrix.
+      // Both are instructions rather than failures, and only the content row
+      // -- the one every work should have -- says so; a missing CF model is
+      // the normal state of a catalog without a ratings corpus.
+      if (explainFailure) {
+        wrap.appendChild(el("h3", "row-title", title));
+        wrap.appendChild(el("p", "muted", String(err.message || err)));
+      }
     });
   }
 

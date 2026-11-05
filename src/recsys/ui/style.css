@@ -180,7 +180,8 @@ main { padding: 20px 24px 48px; }
   display: block;
 }
 
-.thumb .placeholder {
+.thumb .placeholder,
+.mini-thumb .placeholder {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -428,3 +429,62 @@ code {
 
 .linkish:hover { text-decoration: underline; }
 .linkish.is-current { font-weight: 600; }
+
+/* ---- "More like this" ------------------------------------------------- */
+
+.more { padding: 0 24px 24px; }
+.more .row-title { margin-top: 0.6rem; }
+
+.neighbours .muted {
+  margin: 0.2rem 0 0;
+  color: var(--text-faint);
+  font-size: 0.85rem;
+}
+
+.mini-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 120px;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  scroll-snap-type: x proximity;
+}
+
+.mini {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  scroll-snap-align: start;
+}
+
+.mini-thumb {
+  width: 120px;
+  aspect-ratio: 2 / 3;
+  border-radius: var(--radius-s);
+  overflow: hidden;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+}
+
+.mini-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.mini-title {
+  font-size: 0.82rem;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mini-meta { font-size: 0.75rem; color: var(--text-dim); }
+.mini:hover .mini-title { text-decoration: underline; }
+.mini:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
