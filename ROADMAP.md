@@ -110,7 +110,7 @@ documented 3 req/s and 60 req/min. A stranger's `git clone` → `uv sync` →
 
 **Phases 0 through 2 are complete**, and both halves of Phase 3's model layer
 are built. Schema, ingest, API, UI, desktop window, two recommendation models
-and 766 tests, across six populated domains with a ratings matrix behind the
+and 778 tests, across six populated domains with a ratings matrix behind the
 largest.
 
 ```
@@ -127,7 +127,7 @@ catalog        83,981 works      six domains, from 105,161 stored rows
 synopsis coverage  84.4%         of works, across all six domains
 relations      57,453 edges      16,524 adaptations + 27,928 franchise
 ratings    19,172,125 ratings    106,402 users x 6,598 anime, scores 1-10
-tests             766            none touch the network or %LOCALAPPDATA%
+tests             778            none touch the network or %LOCALAPPDATA%
 ```
 
 Two recommendation models: content embeddings and item-item CF, both

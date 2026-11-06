@@ -107,25 +107,26 @@ uv run python scripts/bootstrap.py
 Initialises the SQLite schema, runs the configured ingesters, prints a summary table.
 Idempotent — safe to re-run.
 
-Two sources feed the `anime` domain:
+The registered ingesters, with the row counts of the last full build:
 
 | Ingester | Source | Rows | Cost |
 |---|---|---|---|
-| `anime_mal_csv` | Kaggle MAL dump, static | ~14,478 items | ~2 GB download once, then ~2 s |
-| `anime_jikan` | Jikan v4, live API | up to 2000 items | 3 req/sec limiter |
-| `anime_anilist` | AniList GraphQL, live | ~12.8k items | ~10 min, 30 req/min, no API key |
-| `manga_anilist` | AniList GraphQL, live | ~3.3k items | ~2 min; a second domain |
-| `movie_tmdb` | TMDB, live | ~8k items | ~30 min; **needs a free API credential** |
-| `tv_tmdb` | TMDB, live | ~4k items | ~25 min; same credential |
+| `anime_mal_csv` | Kaggle MAL dump, static | 14,478 items | ~2 GB download once, then ~2 s |
+| `anime_jikan` | Jikan v4, live API | up to 2000 items (~25 while degraded) | 3 req/sec limiter |
+| `anime_jikan_text` | Jikan v4, by id | synopses for anime that have none | 1 req per title; mostly 504s today |
+| `anime_anilist` | AniList GraphQL, live | 16,372 items | ~10 min, 30 req/min, no API key |
+| `manga_anilist` | AniList GraphQL, live | 29,054 items | partitioned sweep, 30 req/min |
+| `movie_tmdb` | TMDB, live | 9,659 items | ~30 min; **needs a free API credential** |
+| `tv_tmdb` | TMDB, live | 9,968 items | ~25 min; same credential |
 | `book_goodbooks` | goodbooks-10k, GitHub CSVs | 10k items | ~4 s, no credential |
-| `music_musicbrainz` | MusicBrainz + Deezer | ~5k artists | hours; MusicBrainz asks 1 req/s |
-| `book_openlibrary` | Open Library | ~9k enriched | ~30 min; the synopses goodbooks lacks |
+| `music_musicbrainz` | MusicBrainz + Deezer | 6,556 artists | hours; MusicBrainz asks 1 req/s |
+| `book_openlibrary` | Open Library | 9,049 enriched | a few hours at 3 req/s; the synopses goodbooks lacks |
 | `anime_mal_ratings` | same Kaggle archive | 19.2M ratings | ~75 s, grows the DB to ~1.3 GB |
 | `book_goodbooks_ratings` | goodbooks-10k, GitHub CSV | 6.0M ratings | ~70 s, 72 MB download, no credential |
 
-`anime_mal_ratings` is **not** in the default `INGESTERS` list. It is a one-off
-bulk load of Phase 3's training data rather than part of building the catalog,
-and it turns a 34 MB database into a 1.3 GB one. Run it deliberately:
+Neither ratings loader is in the default `INGESTERS` list. They are one-off
+bulk loads of Phase 3's training data rather than part of building the catalog,
+and `anime_mal_ratings` alone turns a 34 MB database into a 1.3 GB one. Run them deliberately:
 
 ```powershell
 uv run python scripts/bootstrap.py --only anime_mal_ratings
@@ -133,8 +134,8 @@ uv run python scripts/bootstrap.py --only anime_mal_ratings
 
 `anime_mal_csv` downloads `azathoth42/myanimelist` through kagglehub on first
 run (cached in `~/.cache/kagglehub`, so later runs are offline) and reads only
-the anime table — the multi-GB user-ratings files in that dataset are ignored
-for now. Point `MAL_CSV_PATH` at a local file to skip the download entirely.
+the anime table; the user lists in the same archive are what `anime_mal_ratings`
+reads. Point `MAL_CSV_PATH` at a local file to skip the download entirely.
 
 > **Jikan is currently degraded** and serves only its warm cache: page 1 of
 > `/top/anime` works, everything deeper 504s, so it contributes ~25 items and
@@ -271,6 +272,7 @@ src/recsys/ingest/
   cache.py                on-disk response cache keyed by URL
   kaggle.py               locate a file in a Kaggle dataset, download if absent
   anime_jikan.py          Jikan v4 → UnifiedItem
+  anime_jikan_text.py     Jikan by id: synopses for anime that lack one
   anime_mal_csv.py        Kaggle MAL CSV dump → UnifiedItem
   anilist.py              shared AniList client + mapper, used by both domains
   tmdb.py                 shared TMDB client + mapper, used by movie and tv
@@ -283,6 +285,7 @@ src/recsys/ingest/
   book_openlibrary.py     Open Library work text → UnifiedItem
   ratings_mal_csv.py      Kaggle MAL user lists → ratings rows (a sibling
                           contract, not an Ingester — see below)
+  ratings_goodbooks.py    goodbooks-10k ratings → ratings rows, 1-5 stars doubled
 ```
 
 Adding `anime_mal_csv` cost exactly what the abstraction promised: one new file
@@ -300,7 +303,7 @@ normalisation cost once, at ingest.
 **`item_uid` is derived, never assigned.** It is always
 `"{domain}:{source}:{source_id}"`, computed by a pydantic validator, so it cannot
 drift from its parts. Two sources describing the same work stay separate rows —
-deduplication is Phase 2's job and needs both rows to survive to do it.
+deduplication (`link.py`, below) needs both rows to survive to do it.
 
 **`mean_rating` is normalised at ingest; `popularity` is calibrated after it.**
 Rating scales are known up front, so each ingester rescales its own to 0–10.
@@ -425,18 +428,25 @@ through `textContent` — catalog synopses are third-party text and never touch
 
 ---
 
-## Where each future phase plugs in
+## Where each phase plugs in
 
-| Phase | Work | Touches |
-|---|---|---|
-| 1 | More domains: books (OpenLibrary), movies/TV (TMDB) | one new file in `ingest/` + one line in `registry.py` |
-| 1 | Cross-source id linking | `external_ids` — already populated |
-| 2 | Entity resolution (same work, two sources) | new `links` table via a new migration |
-| 2 | Feature matrices | pyarrow → parquet under `DATA_DIR`, read from `items` |
-| 3 | ~~Content-based and collaborative models~~ **done**; hybrid next | `recsys/models/`, served at `/api/similar` |
-| 3 | ~~User ratings and feedback~~ **done** | `ratings` table, migration 2, `ratings_mal_csv.py` |
-| 3 | ~~Your own library, and cross-domain profile scoring~~ **done** | `models/profile.py`, `/api/ratings` + `/api/library` + `/api/recommend` |
-| 4 | Region-aware availability | `REGION` setting — already threaded through config |
+Phases 0–2 are done and Phase 3 is under way. [ROADMAP.md](ROADMAP.md#phases) has the full table.
+
+| Phase | Work | Touches | Status |
+|---|---|---|---|
+| 0 | Skeleton, schema, one domain end to end | `db.py`, `ingest/base.py`, `api/`, `ui/` | **done** |
+| 1 | Six domains: anime, manga, books, movies, TV, music | one new file in `ingest/` + one line in `registry.py` each | **done** |
+| 1 | Catalog filters and complete (partitioned) sweeps | thresholds in `config.py`, `prune.py`, `partition_by_year` | **done** |
+| 2 | Entity resolution (same work, N sources) | `links` table, migration 3, `link.py` | **done** |
+| 2 | One popularity scale across sources | `popularity_norm` table, migration 4, `popularity.py` | **done** |
+| 2 | Adaptation and franchise edges | `relations` table, migrations 5–6, `relations.py` | **done** |
+| 2 | Feature matrices | pyarrow → parquet under `DATA_DIR`, read from `items` | — |
+| 3 | Ratings corpora | `ratings` table, migration 2, `ratings_mal_csv.py`, `ratings_goodbooks.py` | **done** |
+| 3 | Content-based and collaborative models | `recsys/models/`, served at `/api/similar` | **done** |
+| 3 | Your own library, and cross-domain profile scoring | `models/profile.py`, `/api/ratings` + `/api/library` + `/api/recommend` | **done** |
+| 3 | Hybrid: blend content and CF into one ranking | `recsys/models/` | next |
+| 3 | Import an existing library (MAL/AniList export) | new file in `ingest/`, writes `local:` rows | — |
+| 4 | Implicit signals, similarity graph view, region-aware availability | new `events` migration; `/api/similar` + a canvas; `REGION` setting | — |
 
 The invariant: **adding a domain must not require editing `db.py`, `routes.py`,
 `bootstrap.py`, or the UI.** If a future ingester forces a change in any of those,
