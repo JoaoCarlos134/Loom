@@ -365,10 +365,39 @@ def session(db_path: Path | str | None = None) -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+def _is_other_lines_7(conn: sqlite3.Connection) -> bool:
+    """A version-7 database built by the line that diverged at 6.
+
+    Two lines of work each shipped a migration 7 before they were reconciled
+    (2026-11-11). This line's created `id_map`; the other's is migration 11
+    here. Its 7 is told apart by having `work_tags` and no `id_map`.
+    """
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    return "work_tags" in tables and "id_map" not in tables
+
+
+#: Everything the other line's migration 7 added is a cache `rebuild_works`
+#: refills, so stepping back to 6 loses nothing -- ratings and catalog rows
+#: are untouched -- and migrations 7-11 then apply in order. Migration 8
+#: recreates `works`, which drops the columns that 7 added to it.
+_UNDO_OTHER_LINES_7 = """
+DROP TABLE work_tags;
+DROP TABLE tag_counts;
+DROP INDEX IF EXISTS idx_works_rating;
+DROP INDEX IF EXISTS idx_works_year;
+DROP INDEX IF EXISTS idx_works_title;
+PRAGMA user_version = 6;
+"""
+
+
 def init_db(db_path: Path | str | None = None) -> int:
     """Create or migrate the schema. Idempotent; returns the resulting version."""
     with session(db_path) as conn:
         current = conn.execute("PRAGMA user_version").fetchone()[0]
+        if current == 7 and _is_other_lines_7(conn):
+            log.info("schema 7 is the other line's; stepping back to 6 to migrate")
+            conn.executescript(_UNDO_OTHER_LINES_7)
+            current = 6
         for version, script in MIGRATIONS:
             if version <= current:
                 continue
