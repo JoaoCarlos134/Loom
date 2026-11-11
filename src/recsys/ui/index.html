@@ -30,19 +30,77 @@
                autocomplete="off" spellcheck="false" aria-label="Search the catalog">
       </div>
 
-      <select id="domain" aria-label="Filter by domain">
-        <option value="">All domains</option>
-        <option value="anime">Anime</option>
-        <option value="manga">Manga</option>
-        <option value="book">Books</option>
-        <option value="music">Music</option>
-        <option value="movie">Movies</option>
-        <option value="tv">TV</option>
-      </select>
+    </div>
+
+    <!-- Toggles, not a dropdown: any combination can be on at once, and none
+         on means all of them. -->
+    <div id="domains" class="domains" role="group" aria-label="Domains to show">
+      <button type="button" class="chip" data-domain="anime" aria-pressed="false">Anime</button>
+      <button type="button" class="chip" data-domain="manga" aria-pressed="false">Manga</button>
+      <button type="button" class="chip" data-domain="book" aria-pressed="false">Books</button>
+      <button type="button" class="chip" data-domain="music" aria-pressed="false">Music</button>
+      <button type="button" class="chip" data-domain="movie" aria-pressed="false">Movies</button>
+      <button type="button" class="chip" data-domain="tv" aria-pressed="false">TV</button>
     </div>
   </header>
 
   <main>
+    <!-- Each control names the views it applies to; app.js hides the rest, so
+         a view never shows a filter it would silently ignore. -->
+    <div class="toolbar" id="toolbar">
+      <label class="field" data-views="browse library">
+        <span class="field-label">Sort</span>
+        <select id="sort" aria-label="Sort order"></select>
+      </label>
+
+      <div class="field field-grow" data-views="browse">
+        <span class="field-label">Tags</span>
+        <div class="tag-picker">
+          <span id="tag-chips" class="chips"></span>
+          <input id="tag-input" type="text" list="tag-options" placeholder="Add a tag or genre…"
+                 autocomplete="off" spellcheck="false" aria-label="Filter by tag">
+          <datalist id="tag-options"></datalist>
+        </div>
+      </div>
+
+      <div class="field" data-views="browse">
+        <span class="field-label">Year</span>
+        <input id="year-min" class="year" type="number" min="1000" max="2100" placeholder="from"
+               aria-label="Earliest year">
+        <span class="field-sep">–</span>
+        <input id="year-max" class="year" type="number" min="1000" max="2100" placeholder="to"
+               aria-label="Latest year">
+      </div>
+
+      <label class="field" data-views="browse">
+        <span class="field-label">Score</span>
+        <select id="min-rating" aria-label="Minimum score">
+          <option value="">Any</option>
+          <option value="6">6+</option>
+          <option value="7">7+</option>
+          <option value="8">8+</option>
+          <option value="9">9+</option>
+        </select>
+      </label>
+
+      <label class="field field-check" data-views="recommend"
+             title="Sequels, prequels, spin-offs and source material of what you have rated">
+        <input id="same-franchise" type="checkbox" class="switch">
+        <span>Show same-franchise titles</span>
+      </label>
+
+      <label class="field">
+        <span class="field-label">Show</span>
+        <select id="page-size" aria-label="Items per page"></select>
+      </label>
+
+      <button id="clear-filters" type="button" class="link-btn" data-views="browse" hidden>
+        Clear filters
+      </button>
+    </div>
+
+    <div id="tag-suggest" class="tag-suggest" data-views="browse" hidden></div>
+
     <div class="statusbar">
       <span id="result-count" class="count"></span>
       <span id="stats" class="stats"></span>
@@ -56,11 +114,14 @@
       <p class="empty-title">Nothing here yet</p>
       <p class="empty-body">Run <code>uv run python scripts/bootstrap.py</code> to populate the
          catalog, or adjust your search.</p>
+      <button id="empty-clear" type="button" class="link-btn" hidden>Clear filters</button>
     </div>
 
     <div id="sentinel" class="sentinel" aria-hidden="true"></div>
     <div id="loading" class="loading" hidden>Loading…</div>
   </main>
+
+  <button id="to-top" type="button" class="to-top" aria-label="Back to top" hidden>&uarr;</button>
 
   <dialog id="detail" class="detail">
     <button class="detail-close" data-close aria-label="Close">&times;</button>

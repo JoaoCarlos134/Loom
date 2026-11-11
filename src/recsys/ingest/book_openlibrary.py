@@ -53,6 +53,10 @@ DOMAIN = "book"
 #: any sane length limit while cutting the resolve phase to ~100 requests.
 BATCH_SIZE = 100
 
+#: Large is ~500 px on the long edge. The Goodreads covers this replaces are
+#: 98 px wide, which is a smear on a 170 px card.
+COVER_URL = "https://covers.openlibrary.org/b/id/{cover_id}-L.jpg"
+
 #: Open Library subject headings run long and repetitive ("Fiction, psychological",
 #: "American fiction (fictional works by one author)"). Past this they stop
 #: describing the book and start describing the library catalogue.
@@ -98,6 +102,21 @@ def clean_description(value: Any) -> str | None:
         if cut > 100:
             text = text[:cut]
     return text.strip() or None
+
+
+def cover_url(raw: dict[str, Any]) -> str | None:
+    """The work's cover, addressed by Open Library's own cover id.
+
+    By id and not by ISBN, although the ISBN is right there: the Covers API
+    limits lookups by ISBN to 100 per five minutes per address and does not
+    limit lookups by cover id at all, and a single page of the book shelf is
+    forty of them. The work record already lists its cover ids, so this costs
+    no request. A negative id is Open Library's "known to have none".
+    """
+    for cover in raw.get("covers") or []:
+        if isinstance(cover, int) and not isinstance(cover, bool) and cover > 0:
+            return COVER_URL.format(cover_id=cover)
+    return None
 
 
 def map_openlibrary(
@@ -149,7 +168,7 @@ def map_openlibrary(
         popularity=None,
         mean_rating=None,
         n_ratings=None,
-        image_url=None,
+        image_url=cover_url(raw),
         fetched_at=fetched_at or utcnow(),
         raw_json=raw,
     )

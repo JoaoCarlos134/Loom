@@ -78,6 +78,18 @@ def _musicbrainz(settings: Settings) -> IngestRunner:
     return MusicBrainzIngester(settings)
 
 
+def _music_commons(settings: Settings) -> IngestRunner:
+    from recsys.ingest.music_commons import CommonsMusicIngester
+
+    return CommonsMusicIngester(settings)
+
+
+def _music_deezer(settings: Settings) -> IngestRunner:
+    from recsys.ingest.music_deezer import DeezerMusicIngester
+
+    return DeezerMusicIngester(settings)
+
+
 def _mal_ratings(settings: Settings) -> IngestRunner:
     from recsys.ingest.ratings_mal_csv import MalRatingsLoader
 
@@ -102,6 +114,8 @@ REGISTRY: dict[str, Callable[[Settings], IngestRunner]] = {
     "book_goodbooks": _goodbooks,
     "book_openlibrary": _openlibrary,
     "music_musicbrainz": _musicbrainz,
+    "music_commons": _music_commons,
+    "music_deezer": _music_deezer,
     "anime_mal_ratings": _mal_ratings,
     "book_goodbooks_ratings": _goodbooks_ratings,
 }

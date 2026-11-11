@@ -137,6 +137,18 @@ def _year(value: Any) -> int | None:
     return year if 1000 <= year <= 2100 else None
 
 
+def _cover(value: Any) -> str | None:
+    """The cover URL, unless it is Goodreads' "no photo" stand-in.
+
+    3,332 of the dump's 10,000 image URLs point at one grey placeholder under
+    ``/assets/nophoto/``. Stored as if it were a cover it is worse than a null:
+    a null lets `db.fill_from_siblings` supply the Open Library cover, and a
+    placeholder URL is a populated field that nothing is allowed to overwrite.
+    """
+    url = _clean(value)
+    return None if url is None or "/nophoto/" in url else url
+
+
 def map_goodbooks_row(
     raw: dict[str, Any], *, tags: list[str] | None = None, fetched_at: Any = None
 ) -> UnifiedItem | None:
@@ -189,7 +201,7 @@ def map_goodbooks_row(
         popularity=float(n_ratings) if n_ratings else None,
         mean_rating=mean_rating,
         n_ratings=n_ratings,
-        image_url=_clean(raw.get("image_url")),
+        image_url=_cover(raw.get("image_url")),
         fetched_at=fetched_at or utcnow(),
         raw_json=raw,
     )

@@ -187,6 +187,57 @@ MIGRATION_6 = """
 CREATE INDEX idx_relations_relation ON relations(relation, src_item_uid);
 """
 
+# Browsing by something other than popularity. `works` gains the scalars a
+# listing filters and sorts on, stored *filled from the work's other rows* --
+# 8,399 of 10,000 book works have no year on the row that represents them and
+# get one from a sibling at read time, so a filter on `items.year` would hide
+# books the page then displays a year for.
+#
+# Tags get their own table for the same reason `works` exists at all: they are
+# JSON text on `items`, and answering "which works carry this tag" by walking
+# `json_each` over the catalog was measured at 265 ms a query. `work_tags` is
+# that walk done once at rebuild (727k pairs on the 84k-work catalog);
+# `tag_counts` is the picker's vocabulary, 48k distinct tags that would
+# otherwise be a GROUP BY over all of those pairs on every keystroke.
+#
+#
+# `rating_key` is what "highest rated" sorts on, and it is not `mean_rating`.
+# Ordered by the raw mean, the catalog opened with four anime scored 10.0 by
+# one voter each. See `works.py` for the weighting; `mean_rating` stays beside
+# it because a "7 and up" filter has to mean the number printed on the card.
+#
+# The DELETE is deliberate. `works` is a cache, and rows written before this
+# migration have NULL in the new columns, which a year filter would read as "no
+# work has a year". Emptying it makes reads fall back to the live joins until
+# `rebuild_works` next runs: slower, and for year and score filters narrower
+# (that path reads the representative's own columns, unfilled), but never the
+# empty shelf that filtering on NULLs would be.
+MIGRATION_7 = """
+ALTER TABLE works ADD COLUMN year INTEGER;
+ALTER TABLE works ADD COLUMN mean_rating REAL;
+ALTER TABLE works ADD COLUMN n_ratings INTEGER;
+ALTER TABLE works ADD COLUMN rating_key REAL;
+
+CREATE INDEX idx_works_rating ON works(rating_key DESC, sort_key DESC);
+CREATE INDEX idx_works_year   ON works(year DESC, sort_key DESC);
+CREATE INDEX idx_works_title  ON works(title COLLATE NOCASE);
+
+CREATE TABLE work_tags (
+    tag      TEXT NOT NULL,
+    item_uid TEXT NOT NULL,
+    PRIMARY KEY (tag, item_uid)
+) WITHOUT ROWID;
+
+CREATE TABLE tag_counts (
+    domain TEXT NOT NULL,
+    tag    TEXT NOT NULL,
+    n      INTEGER NOT NULL,
+    PRIMARY KEY (domain, tag)
+) WITHOUT ROWID;
+
+DELETE FROM works;
+"""
+
 # Append new migrations here; never modify an existing entry.
 MIGRATIONS: list[tuple[int, str]] = [
     (1, MIGRATION_1),
@@ -195,6 +246,7 @@ MIGRATIONS: list[tuple[int, str]] = [
     (4, MIGRATION_4),
     (5, MIGRATION_5),
     (6, MIGRATION_6),
+    (7, MIGRATION_7),
 ]
 
 SCHEMA_VERSION = MIGRATIONS[-1][0]
@@ -406,18 +458,49 @@ def get_rating(
     return None if row is None else (float(row["rating"]), row["rated_at"])
 
 
+#: One domain, several, or none for all of them. Several is what a reader
+#: means by "anime and films, not the rest" -- and what a single-valued filter
+#: made them ask for one domain at a time.
+Domains = str | Sequence[str] | None
+
+
+def _in_domains(column: str, domain: Domains) -> tuple[str | None, list[str]]:
+    """A WHERE term restricting ``column`` to ``domain``, and its parameters."""
+    wanted = [domain] if isinstance(domain, str) else list(domain or ())
+    if not wanted:
+        return None, []
+    if len(wanted) == 1:
+        # Kept as an equality: `idx_works_domain_sort` can then serve both the
+        # filter and the ordering, which an IN list cannot promise.
+        return f"{column} = ?", wanted
+    return f"{column} IN ({','.join('?' * len(wanted))})", wanted
+
+
+#: Orderings your library can be read in. ``recent`` is the default: a library
+#: is a record of what you have been doing lately before it is a ranking.
+LIBRARY_SORTS: dict[str, str] = {
+    "recent": "r.rated_at DESC, i.title ASC",
+    "rating": "r.rating DESC, r.rated_at DESC",
+    "title": "i.title COLLATE NOCASE ASC",
+}
+
+
 def query_ratings(
     conn: sqlite3.Connection,
     *,
     user_uid: str = LOCAL_USER_UID,
-    domain: str | None = None,
+    domain: Domains = None,
+    q: str | None = None,
+    sort: str = "recent",
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[int, list[tuple[float, str | None, UnifiedItem]]]:
     """Your library -- ratings joined to the catalog rows they name.
 
-    Newest first, because a library is read as a record of what you have been
-    doing lately rather than as a ranking.
+    Newest first unless ``sort`` says otherwise (see ``LIBRARY_SORTS``). ``q``
+    searches it the way Browse searches the catalog, through the same FTS index
+    and the same quoting, so a library holding *Shingeki no Kyojin* is found by
+    typing "attack on titan".
 
     An inner join, so a rating pointing at a row that is not in the catalog --
     pruned since, or never ingested -- does not appear. That is a real case:
@@ -426,9 +509,16 @@ def query_ratings(
     """
     where = ["r.user_uid = ?"]
     params: list[Any] = [user_uid]
-    if domain:
-        where.append("i.domain = ?")
-        params.append(domain)
+    term, values = _in_domains("i.domain", domain)
+    if term:
+        where.append(term)
+        params.extend(values)
+    if q:
+        match = build_fts_query(q)
+        if match is None:
+            return (0, [])
+        where.append("i.rowid IN (SELECT rowid FROM items_fts WHERE items_fts MATCH ?)")
+        params.append(match)
     tail = " WHERE " + " AND ".join(where)
 
     total = conn.execute(
@@ -437,7 +527,7 @@ def query_ratings(
     rows = conn.execute(
         f"""SELECT r.rating AS my_rating, r.rated_at AS my_rated_at, {_SELECT_COLS}
             FROM ratings r JOIN items i ON i.item_uid = r.item_uid{tail}
-            ORDER BY r.rated_at DESC, i.title ASC LIMIT ? OFFSET ?""",
+            ORDER BY {LIBRARY_SORTS[sort]} LIMIT ? OFFSET ?""",
         [*params, limit, offset],
     ).fetchall()
 
@@ -569,11 +659,21 @@ def build_fts_query(q: str) -> str | None:
     return " ".join(quoted)  # FTS5's default operator is AND
 
 
+#: Orderings a listing can be asked for. Not listed: relevance, which is what a
+#: search gets when it names no other, and which means nothing without one.
+ITEM_SORTS: tuple[str, ...] = ("popularity", "rating", "newest", "oldest", "title")
+
+
 def query_items(
     conn: sqlite3.Connection,
     *,
-    domain: str | None = None,
+    domain: Domains = None,
     q: str | None = None,
+    tags: Sequence[str] = (),
+    year_min: int | None = None,
+    year_max: int | None = None,
+    min_rating: float | None = None,
+    sort: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[int, list[UnifiedItem]]:
@@ -582,64 +682,132 @@ def query_items(
     With ``q``, the FTS index drives the query and results are bm25-ranked with
     title weighted above alt_titles above description. Without ``q``, results
     are ordered by `recsys.popularity`'s cross-source calibrated popularity,
-    falling back to the raw count where nothing has been calibrated.
+    falling back to the raw count where nothing has been calibrated. ``sort``
+    (one of ``ITEM_SORTS``) overrides either.
+
+    ``tags`` must *all* be carried -- narrowing is what a second tag is for; a
+    reader who adds "time travel" to "romance" wants fewer works, not more.
+    A work with no year or no score never passes a filter on that field: the
+    filter is a claim about the work, and an absent value supports no claim.
 
     One row per *work*: where several sources describe the same thing, only the
     row `link.py` marked primary is returned. Use :func:`get_item` to reach a
     non-primary row directly by uid -- it is still there.
     """
+    match = build_fts_query(q) if q else None
+    if q and match is None:
+        # e.g. q="!!!" -- nothing searchable in it at all
+        return (0, [])
+
     params: list[Any] = []
     where: list[str] = []
 
     fast = _works_built(conn)
     if fast:
         # `works` already holds one row per work, so the primary-only predicate
-        # is the join itself and the domain filter goes through the same index
-        # as the ordering.
-        joins, sort = _WORKS_JOIN, _WORKS_ORDER
-        if domain:
-            where.append("w.domain = ?")
+        # is the join itself, and every filter below reads a column of `w` --
+        # which is what lets the count skip `items` altogether.
+        joins = _WORKS_JOIN
+        col = {"domain": "w.domain", "pop": _WORKS_ORDER, "title": "w.title",
+               "year": "w.year", "rating": "w.mean_rating", "best": "w.rating_key"}
+        has_tag = "w.item_uid IN (SELECT item_uid FROM work_tags WHERE tag = ?)"
     else:
-        joins, sort = f"{_PRIMARY_JOIN} {_POP_JOIN}", _POP_ORDER
-        if domain:
-            where.append("i.domain = ?")
-        where.append(_PRIMARY_ONLY)  # no placeholder, so param order is unaffected
-
-    match = build_fts_query(q) if q else None
-    if q and match is None:
-        # e.g. q="!!!" -- nothing searchable in it at all
-        return (0, [])
+        # The live joins, for a catalog whose read view has not been built.
+        # Year and score here are the representative row's own, not filled
+        # from its siblings, so this path can miss a work the fast one finds;
+        # and "highest rated" is the raw mean, with no vote weighting behind it.
+        joins = f"{_PRIMARY_JOIN} {_POP_JOIN}"
+        col = {"domain": "i.domain", "pop": _POP_ORDER, "title": "i.title",
+               "year": "i.year", "rating": "i.mean_rating", "best": "i.mean_rating"}
+        has_tag = "EXISTS (SELECT 1 FROM json_each(i.tags) WHERE value = ?)"
+        where.append(_PRIMARY_ONLY)
 
     if match:
-        base = (
-            "FROM items_fts f JOIN items i ON i.rowid = f.rowid "
-            f"{joins} WHERE items_fts MATCH ?"
-        )
+        where.append("items_fts MATCH ?")
         params.append(match)
-        if domain:
-            params.append(domain)
-        tail = " AND " + " AND ".join(where) if where else ""
-        order = f"ORDER BY bm25(items_fts, 10.0, 4.0, 1.0), {sort} DESC"
+    term, values = _in_domains(col["domain"], domain)
+    if term:
+        where.append(term)
+        params.extend(values)
+    for tag in tags:
+        where.append(has_tag)
+        params.append(tag)
+    for bound, op, value in (("year", ">=", year_min), ("year", "<=", year_max),
+                             ("rating", ">=", min_rating)):
+        if value is not None:
+            where.append(f"{col[bound]} {op} ?")
+            params.append(value)
+
+    orders = {
+        "popularity": f"{col['pop']} DESC, {col['title']} ASC",
+        "rating": f"{col['best']} DESC, {col['pop']} DESC",
+        "newest": f"{col['year']} DESC, {col['pop']} DESC",
+        # SQLite sorts NULL first ascending; an undated work is not the oldest.
+        "oldest": f"{col['year']} IS NULL, {col['year']} ASC, {col['pop']} DESC",
+        "title": f"{col['title']} COLLATE NOCASE ASC",
+    }
+    if sort is not None and sort not in orders:
+        raise ValueError(f"unknown sort {sort!r}; expected one of {ITEM_SORTS}")
+
+    if match:
+        base = f"FROM items_fts f JOIN items i ON i.rowid = f.rowid {joins}"
+        order = orders[sort] if sort else f"bm25(items_fts, 10.0, 4.0, 1.0), {col['pop']} DESC"
         count_base = base
     else:
         base = f"FROM items i {joins}"
-        if domain:
-            params.append(domain)
-        tail = " WHERE " + " AND ".join(where) if where else ""
-        order = f"ORDER BY {sort} DESC, i.title ASC"
+        order = orders[sort or "popularity"]
         # Counted straight off `works`, without touching `items` at all. The
         # page needs the item columns; the count needs one row per work, which
         # is what `works` *is* -- joining back to `items` to count them cost
         # 60 ms of the 62, an index probe per work to learn nothing.
         count_base = "FROM works w" if fast else base
 
+    tail = " WHERE " + " AND ".join(where) if where else ""
     total = conn.execute(f"SELECT COUNT(*) {count_base}{tail}", params).fetchone()[0]
     rows = conn.execute(
-        f"SELECT {_SELECT_COLS} {base}{tail} {order} LIMIT ? OFFSET ?",
+        f"SELECT {_SELECT_COLS} {base}{tail} ORDER BY {order} LIMIT ? OFFSET ?",
         [*params, limit, offset],
     ).fetchall()
     items = [UnifiedItem.from_row(r) for r in rows]
     return (int(total), fill_from_siblings(conn, items))
+
+
+def top_tags(
+    conn: sqlite3.Connection,
+    *,
+    domain: Domains = None,
+    q: str | None = None,
+    limit: int = 30,
+) -> list[tuple[str, int]]:
+    """The most-carried tags, optionally within a domain or containing ``q``.
+
+    What a tag picker offers. The vocabulary is 48k tags wide and most of it
+    is one book's subject heading, so a picker cannot list it and a reader
+    cannot guess it -- counts are what make it navigable.
+
+    Empty until ``rebuild_works`` has run. That is the degradation rather than
+    a live GROUP BY over every row's JSON: a picker with no suggestions still
+    takes a typed tag, and `query_items` still filters on it.
+    """
+    where: list[str] = []
+    params: list[Any] = []
+    term, values = _in_domains("domain", domain)
+    if term:
+        where.append(term)
+        params.extend(values)
+    if q and q.strip():
+        # instr, not LIKE: a tag is data, and "%" in one is not a wildcard.
+        where.append("instr(tag, ?) > 0")
+        params.append(q.strip().lower())
+    tail = " WHERE " + " AND ".join(where) if where else ""
+    return [
+        (r["tag"], int(r["n"]))
+        for r in conn.execute(
+            f"SELECT tag, SUM(n) AS n FROM tag_counts{tail} "
+            "GROUP BY tag ORDER BY n DESC, tag ASC LIMIT ?",
+            [*params, limit],
+        )
+    ]
 
 
 #: Scalars a sibling row may supply when the representative lacks them. Lists
@@ -650,7 +818,7 @@ _FILLABLE = ("year", "description", "popularity", "mean_rating", "n_ratings", "i
 
 
 def fill_from_siblings(
-    conn: sqlite3.Connection, items: list[UnifiedItem]
+    conn: sqlite3.Connection, items: list[UnifiedItem], *, ids: bool = False
 ) -> list[UnifiedItem]:
     """Complete each work's representative from the other rows describing it.
 
@@ -661,8 +829,19 @@ def fill_from_siblings(
 
     Only nulls are filled, and only from rows of the same work, so nothing here
     can overwrite a source's own datum with another's.
+
+    Donors are read in uid order, and ``works.rebuild_works`` picks the same
+    way. Where two siblings disagree about a year, the listing filters on the
+    value this displays rather than on whichever row SQLite returned first.
+
+    ``ids`` also gathers the siblings' ``external_ids``, under the same rule:
+    a key the representative lacks is added, one it has is never replaced.
+    That is what puts a book's Goodreads link on a page whose text came from
+    Open Library, and the credit for a portrait beside the portrait. Off by
+    default because only a detail view shows ids, and turning it on means
+    asking about every item rather than just the incomplete ones.
     """
-    gapped = [i for i in items if any(getattr(i, f) is None for f in _FILLABLE)]
+    gapped = [i for i in items if ids or any(getattr(i, f) is None for f in _FILLABLE)]
     if not gapped:
         return items
 
@@ -675,7 +854,8 @@ def fill_from_siblings(
                 FROM links mine
                 JOIN links theirs ON theirs.work_uid = mine.work_uid
                 JOIN items i ON i.item_uid = theirs.item_uid
-                WHERE mine.item_uid IN ({marks}) AND theirs.item_uid != mine.item_uid""",
+                WHERE mine.item_uid IN ({marks}) AND theirs.item_uid != mine.item_uid
+                ORDER BY theirs.item_uid""",
             list(chunk),
         ):
             donors.setdefault(row["target"], []).append(row)
@@ -686,13 +866,20 @@ def fill_from_siblings(
         if not rows:
             filled.append(item)
             continue
-        patch = {
+        patch: dict[str, Any] = {
             field: value
             for field in _FILLABLE
             if getattr(item, field) is None
             for value in (next((r[field] for r in rows if r[field] is not None), None),)
             if value is not None
         }
+        if ids:
+            merged = dict(item.external_ids)
+            for r in rows:
+                for key, value in json.loads(r["external_ids"] or "{}").items():
+                    merged.setdefault(key, str(value))
+            if merged != item.external_ids:
+                patch["external_ids"] = merged
         filled.append(item.model_copy(update=patch) if patch else item)
     return filled
 
@@ -703,7 +890,7 @@ def get_item(conn: sqlite3.Connection, item_uid: str) -> UnifiedItem | None:
     ).fetchone()
     if row is None:
         return None
-    return fill_from_siblings(conn, [UnifiedItem.from_row(row)])[0]
+    return fill_from_siblings(conn, [UnifiedItem.from_row(row)], ids=True)[0]
 
 
 def count_items(conn: sqlite3.Connection) -> int:

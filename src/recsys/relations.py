@@ -118,15 +118,57 @@ def rebuild_relations(conn: sqlite3.Connection) -> RelationResult:
     return result
 
 
+#: What a recommendation holds back: a work's own franchise *and* the same
+#: story in another medium. The two sets above stay separate because they mean
+#: different things to the model -- an adaptation edge is the ground truth
+#: ``models/evaluate.py`` scores against, a sequel edge is not -- but to someone
+#: asking what to try next they are one answer: "more of what you just rated".
+#:
+#: ``CHARACTER`` and ``OTHER`` are left out on a measurement, not a hunch.
+#: Walking these edges transitively over the 57k-edge catalog, the largest
+#: connected group is 330 works (Gundam, which is right). Adding ``OTHER`` grows
+#: it to 414 by welding Gridman onto Gundam; adding ``CHARACTER`` produces one
+#: group of 4,599 -- every crossover special joins two franchises, and rating
+#: one anime would then hide a quarter of the anime catalog.
+SUPPRESSED_RELATIONS: frozenset[str] = FRANCHISE_RELATIONS | ADAPTATION_RELATIONS
+
+#: Relations whose *target* is derived from its source: the edge points down
+#: from a work to something made out of it. ``PARENT`` is the same statement
+#: from the other end.
+_DERIVED_RELATIONS: frozenset[str] = frozenset({"SIDE_STORY", "SPIN_OFF", "SUMMARY"})
+
+
 def franchise_representatives(
     conn: sqlite3.Connection,
     item_uid: str,
-    relations: frozenset[str] = FRANCHISE_RELATIONS,
+    relations: frozenset[str] = SUPPRESSED_RELATIONS,
 ) -> set[str]:
     """Representative uids of every work in ``item_uid``'s franchise.
 
-    What ``routes.similar`` suppresses. It translates on *both* ends, which
-    ``related_uids`` alone does not, and that translation is the whole point:
+    What ``routes.similar`` suppresses. **Transitive**: AniList records a
+    relation between neighbours only, so a third season is an edge from the
+    second and nothing from the first. One hop found *DEATH NOTE Rewrite* from
+    *DEATH NOTE* and none of the manga's own spin-offs, which sit two edges
+    away through the manga.
+
+    **But never through a crossover.** Followed without limit, the edges chain
+    franchises that have nothing to do with each other: *Dragon Ball Z* reaches
+    *ONE PIECE* in four hops through a festival short filed under both, and
+    *Nanatsu no Taizai* reaches *FAIRY TAIL* through a joint one-shot. Hiding
+    One Piece from someone who rated Dragon Ball is the opposite of the job.
+    What those bridges have in common is that they are derived from *two*
+    works, so a work with two parents is reached and not walked through: it
+    belongs to both franchises, and joins neither to the other. (Unless both
+    parents turn out to be in *this* franchise -- an OVA set between two
+    seasons has two parents too, and is no crossover.) Measured over
+    the 1,500 most popular anime that leaves a median franchise of 5 works and
+    a largest of 307 (Gundam), with all of the pairs above apart. One kind of
+    bridge survives it -- an anime adapting two unrelated manga, which is how
+    *Hanma Baki* still reaches *Kengan Ashura* -- because a manga with many
+    adaptations is the normal case and cannot be told from it by edge type.
+
+    It translates on *both* ends, which ``related_uids`` alone does not, and
+    that translation is the whole point:
 
     * Edges live on the AniList row (``relations`` keys them ``…:anilist:…``),
       which need not be the row a caller holds -- when a richer non-AniList row
@@ -143,10 +185,57 @@ def franchise_representatives(
     """
     from recsys.link import representative_uid, work_members
 
-    related: set[str] = set()
-    for member in work_members(conn, item_uid):
-        related |= related_uids(conn, member, relations)
-    return {representative_uid(conn, uid) for uid in related}
+    own = set(work_members(conn, item_uid))
+    seen = set(own)
+    frontier = list(own)
+    held: dict[str, set[str]] = {}  # two-parent works reached, not yet walked through
+    cleared: set[str] = set()  # ...and the ones since found to be no crossover
+    while frontier:
+        node = frontier.pop()
+        # The query itself is always walked from: rating a crossover does mean
+        # you know both of the things it crosses.
+        derived_from = set() if node in own or node in cleared else _parents(conn, node)
+        if len(derived_from) >= 2:
+            held[node] = derived_from
+        else:
+            reached = related_uids(conn, node, relations) - seen
+            seen |= reached
+            frontier.extend(reached)
+        if not frontier:
+            # Two parents is also what an OVA set between two seasons looks
+            # like. Once the walk has run out, any held work whose parents all
+            # turned out to be in this franchise was that, not a crossover, and
+            # is walked through after all. Decided here rather than on arrival
+            # so the answer does not depend on which edge was followed first.
+            frontier = [n for n, parents in held.items() if parents <= seen]
+            for released in frontier:
+                del held[released]
+                cleared.add(released)
+    # Edges run both ways, so the walk always arrives back at the query; a
+    # work is not a member of its own franchise for this purpose.
+    return {representative_uid(conn, uid) for uid in seen - own} - {
+        representative_uid(conn, item_uid)
+    }
+
+
+def _parents(conn: sqlite3.Connection, item_uid: str) -> set[str]:
+    """The distinct works ``item_uid`` is derived from.
+
+    Gathered from both ends, because AniList often records only one: the
+    special names its ``PARENT``, or the series names its ``SIDE_STORY``.
+    """
+    marks = ",".join("?" * len(_DERIVED_RELATIONS))
+    return {
+        row[0]
+        for row in conn.execute(
+            f"""SELECT dst_item_uid FROM relations
+                 WHERE src_item_uid = ? AND relation = 'PARENT'
+                UNION
+                SELECT src_item_uid FROM relations
+                 WHERE dst_item_uid = ? AND relation IN ({marks})""",
+            [item_uid, item_uid, *sorted(_DERIVED_RELATIONS)],
+        )
+    }
 
 
 def related_uids(

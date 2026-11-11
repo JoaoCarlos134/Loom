@@ -244,6 +244,13 @@ class ItemsPage(BaseModel):
     items: list[UnifiedItem]
 
 
+class TagCount(BaseModel):
+    """One tag and how many works carry it -- a row of /api/tags."""
+
+    tag: str
+    n: int
+
+
 class SimilarItem(BaseModel):
     """One neighbour, with the catalog row so a caller needs no second request."""
 
@@ -257,7 +264,8 @@ class SimilarPage(BaseModel):
     ``n_suppressed`` is reported rather than hidden: neighbours dropped for
     sharing a franchise with the query are the difference between a
     recommendation and a table of contents, and a caller comparing results
-    should be able to see how many the filter took.
+    should be able to see how many the filter took. It counts what was skipped
+    on the way to filling this page, not the size of the franchise.
     """
 
     item_uid: str

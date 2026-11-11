@@ -42,7 +42,10 @@ log = get_logger(__name__)
 #: joined. That under-links rather than over-links, which is the safe direction
 #: -- a missed link leaves two rows where there should be one, while a false
 #: link hides a real book behind an unrelated one.
-LINK_KEYS: tuple[str, ...] = ("mal_id", "isbn")
+#:
+#: ``musicbrainz_id`` is an artist's MBID, as exact as ``mal_id``; it joins the
+#: ``music_commons`` portrait rows to the artists they are portraits of.
+LINK_KEYS: tuple[str, ...] = ("mal_id", "isbn", "musicbrainz_id")
 
 
 @dataclass

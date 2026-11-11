@@ -152,6 +152,18 @@ class Settings(BaseSettings):
     musicbrainz_rate_per_min: float = 45.0
     musicbrainz_max_retries: int = 8
 
+    # Wikidata + Wikimedia Commons (artist portraits). Keyless. Driven by the
+    # MusicBrainz ids already in the catalog, so music_musicbrainz runs first.
+    wikidata_sparql_url: str = "https://query.wikidata.org/sparql"
+    music_commons_target_count: int = 0  # 0 = every artist in the catalog
+    # Asked of Commons as a thumbnail width. The originals are whatever the
+    # photographer uploaded -- routinely several megabytes -- and a card is
+    # 170 px wide; 500 covers the detail view on a high-density screen.
+    commons_image_width: int = 500
+    # ~33 queries for the whole domain, so there is nothing to gain by hurrying.
+    wikidata_rate_per_sec: float = 1.0
+    wikidata_max_retries: int = 5
+
     # MyAnimeList user ratings, from the same Kaggle archive as the anime
     # table. Rows read, not rows written: ~40% carry no score and are skipped.
     mal_ratings_filename: str = "animelists_cleaned.csv"

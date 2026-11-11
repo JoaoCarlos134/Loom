@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator, Sequence
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
@@ -14,6 +14,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from recsys import __version__
 from recsys.config import Settings, get_settings
 from recsys.db import (
+    ITEM_SORTS,
+    LIBRARY_SORTS,
     count_items,
     delete_rating,
     domain_stats,
@@ -24,9 +26,10 @@ from recsys.db import (
     query_ratings,
     rated_uids,
     set_rating,
+    top_tags,
 )
+from recsys.franchise import Franchise, franchise_of
 from recsys.models.profile import build_profile
-from recsys.relations import franchise_representatives
 from recsys.schemas import (
     DOMAINS,
     DomainStats,
@@ -39,10 +42,14 @@ from recsys.schemas import (
     SimilarItem,
     SimilarPage,
     Stats,
+    TagCount,
     UnifiedItem,
 )
 
 router = APIRouter(prefix="/api", tags=["catalog"])
+
+#: Tags one listing may combine. Far past what a reader narrows by.
+MAX_TAGS = 20
 
 
 def _similarity_index(path: Path):
@@ -100,16 +107,30 @@ Conn = Annotated[sqlite3.Connection, Depends(db_conn)]
 Cfg = Annotated[Settings, Depends(get_settings)]
 
 
-def _validated_domain(domain: str | None) -> str | None:
-    """Normalise and check a ``domain`` query parameter. ``None`` means all."""
-    if domain is None:
-        return None
-    domain = domain.strip().lower()
-    if domain in ("", "all"):
-        return None
-    if domain not in DOMAINS:
-        raise HTTPException(422, f"unknown domain {domain!r}; expected one of {list(DOMAINS)}")
-    return domain
+def _validated_domains(domain: Sequence[str]) -> list[str]:
+    """Normalise and check a repeatable ``domain`` parameter. Empty means all.
+
+    Repeatable so a reader can ask for anime and films and nothing else. An
+    empty value or ``all`` anywhere in the list is no restriction, which is
+    what a client that always sends the parameter needs.
+    """
+    wanted: dict[str, None] = {}
+    for value in domain:
+        value = value.strip().lower()
+        if value in ("", "all"):
+            return []
+        if value not in DOMAINS:
+            raise HTTPException(
+                422, f"unknown domain {value!r}; expected one of {list(DOMAINS)}"
+            )
+        wanted.setdefault(value, None)
+    # Every domain named is the same question as none named.
+    return [] if len(wanted) == len(DOMAINS) else list(wanted)
+
+
+def _only(domains: list[str]) -> str | None:
+    """The one domain a response names, when the answer was restricted to one."""
+    return domains[0] if len(domains) == 1 else None
 
 
 @router.get("/health", response_model=Health)
@@ -122,18 +143,102 @@ def health(conn: Conn) -> Health:
         return Health(status="degraded", version=__version__, db_ready=False, n_items=0)
 
 
+def _validated_sort(sort: str | None, allowed: Sequence[str]) -> str | None:
+    """Normalise and check a ``sort`` query parameter. ``None`` means the default."""
+    if sort is None or not sort.strip():
+        return None
+    sort = sort.strip().lower()
+    if sort not in allowed:
+        raise HTTPException(422, f"unknown sort {sort!r}; expected one of {list(allowed)}")
+    return sort
+
+
+def _fresh(
+    conn: sqlite3.Connection,
+    fetch: Callable[[int], list[Any]],
+    k: int,
+    franchise: Franchise | None,
+) -> tuple[list[tuple[Any, UnifiedItem]], int]:
+    """The first ``k`` neighbours that are not more of the same, and how many were.
+
+    ``fetch(n)`` returns the ``n`` nearest, ranked. A franchise cannot be taken
+    out before ranking the way a rated uid can: half of it is recognised by
+    title, which is only known once a candidate is in hand. So this over-fetches
+    and widens until the page is full or the model has nothing further --
+    rating one long-running series must not come back as a page of six.
+
+    The count is of what was actually skipped on the way to ``k``, which is the
+    number a reader can use: how much of this page would have been repeats.
+    """
+    items: dict[str, UnifiedItem | None] = {}
+    n = k if franchise is None else 2 * k + 20
+    while True:
+        found = fetch(n)
+        kept: list[tuple[Any, UnifiedItem]] = []
+        n_suppressed = 0
+        for neighbour in found:
+            uid = neighbour.item_uid
+            if uid not in items:
+                items[uid] = get_item(conn, uid)
+            item = items[uid]
+            if item is None:
+                continue  # in the model, gone from the catalog: a stale artifact
+            if franchise is not None and franchise.covers(item):
+                n_suppressed += 1
+                continue
+            kept.append((neighbour, item))
+            if len(kept) == k:
+                break
+        if len(kept) == k or len(found) < n:
+            return kept, n_suppressed
+        n *= 2
+
+
 @router.get("/items", response_model=ItemsPage)
 def list_items(
     conn: Conn,
-    domain: str | None = Query(None, description="Filter to one domain"),
+    domain: list[str] = Query(default_factory=list, description="Only these domains"),
     q: str | None = Query(None, description="Full-text search over title + description"),
+    tag: list[str] = Query(default_factory=list, description="Carry every one of these tags"),
+    year_min: int | None = Query(None, ge=1000, le=2100),
+    year_max: int | None = Query(None, ge=1000, le=2100),
+    min_rating: float | None = Query(None, ge=0.0, le=10.0),
+    sort: str | None = Query(
+        None, description=f"One of {list(ITEM_SORTS)}; default is relevance for a "
+                          "search and popularity otherwise"
+    ),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> ItemsPage:
-    domain = _validated_domain(domain)
+    domains = _validated_domains(domain)
     q = q.strip() if q else None
-    total, items = query_items(conn, domain=domain, q=q, limit=limit, offset=offset)
+    # Tags are stored lowercased by the schema, so a filter is folded the same
+    # way rather than silently matching nothing for "Sci-Fi".
+    tags = [t.strip().lower() for t in tag if t.strip()]
+    if len(tags) > MAX_TAGS:
+        # Each tag is a subquery, and SQLite refuses an expression tree past a
+        # depth it is not this route's business to discover with a 500.
+        raise HTTPException(422, f"at most {MAX_TAGS} tags can be combined")
+    total, items = query_items(
+        conn, domain=domains, q=q, tags=tags, year_min=year_min, year_max=year_max,
+        min_rating=min_rating, sort=_validated_sort(sort, ITEM_SORTS),
+        limit=limit, offset=offset,
+    )
     return ItemsPage(total=total, limit=limit, offset=offset, items=items)
+
+
+@router.get("/tags", response_model=list[TagCount])
+def list_tags(
+    conn: Conn,
+    domain: list[str] = Query(default_factory=list, description="Count within these"),
+    q: str | None = Query(None, description="Only tags containing this text"),
+    limit: int = Query(30, ge=1, le=200),
+) -> list[TagCount]:
+    """The most-carried tags, for a picker. Empty until the read view is built."""
+    return [
+        TagCount(tag=tag, n=n)
+        for tag, n in top_tags(conn, domain=_validated_domains(domain), q=q, limit=limit)
+    ]
 
 
 @router.get("/items/{item_uid:path}", response_model=UnifiedItem)
@@ -151,7 +256,7 @@ def similar(
     item_uid: str,
     conn: Conn,
     cfg: Cfg,
-    domain: str | None = Query(None, description="Restrict neighbours to one domain"),
+    domain: list[str] = Query(default_factory=list, description="Only these domains"),
     k: int = Query(10, ge=1, le=50),
     same_franchise: bool = Query(
         False, description="Include a work's own sequels, prequels and side stories"
@@ -173,17 +278,13 @@ def similar(
     """
     if method not in ("content", "cf"):
         raise HTTPException(422, f"unknown method {method!r}; expected 'content' or 'cf'")
-    domain = _validated_domain(domain)
+    domains = _validated_domains(domain)
 
     if get_item(conn, item_uid) is None:
         raise HTTPException(404, f"no item with uid {item_uid!r}")
 
-    # Over-fetch so franchise suppression cannot return fewer than k when there
-    # are k genuine neighbours behind the sequels.
-    suppress: set[str] = set()
-    if not same_franchise:
-        suppress = franchise_representatives(conn, item_uid)
-    want = k + len(suppress)
+    franchise = None if same_franchise else franchise_of(conn, [item_uid])
+    fetch: Callable[[int], list[Any]]
 
     if method == "cf":
         cf = _collaborative_index(cfg.collaborative_path)
@@ -195,9 +296,11 @@ def similar(
             )
         # The index translates uid spaces itself; an empty list means this work
         # has no ratings, which is an answer rather than an error.
-        found = cf.similar_to(conn, item_uid, k=want)
-        if domain is not None:
-            found = [n for n in found if n.item_uid.startswith(f"{domain}:")]
+        def fetch(n: int) -> list[Any]:
+            found: list[Any] = list(cf.similar_to(conn, item_uid, k=n))
+            if domains:
+                found = [x for x in found if x.item_uid.split(":", 1)[0] in domains]
+            return found
     else:
         index = _similarity_index(cfg.embeddings_path)
         if index is None:
@@ -214,29 +317,17 @@ def similar(
                 f"{item_uid!r} is not in the embedding matrix; "
                 "rebuild it with scripts/embed.py",
             )
-        found = index.similar_to(item_uid, k=want, domain=domain)
 
-    kept: list[Any] = []
-    n_suppressed = 0
-    for neighbour in found:
-        if neighbour.item_uid in suppress:
-            n_suppressed += 1
-            continue
-        if len(kept) == k:
-            break
-        kept.append(neighbour)
+        def fetch(n: int) -> list[Any]:
+            return list(index.similar_to(item_uid, k=n, domain=domains))
 
-    items = {i.item_uid: i for i in (get_item(conn, n.item_uid) for n in kept) if i is not None}
+    kept, n_suppressed = _fresh(conn, fetch, k, franchise)
     return SimilarPage(
         item_uid=item_uid,
-        domain=domain,
+        domain=_only(domains),
         method=method,
         n_suppressed=n_suppressed,
-        neighbours=[
-            SimilarItem(score=n.score, item=items[n.item_uid])
-            for n in kept
-            if n.item_uid in items
-        ],
+        neighbours=[SimilarItem(score=n.score, item=item) for n, item in kept],
     )
 
 
@@ -314,13 +405,17 @@ def unrate_item(item_uid: str, conn: Conn) -> Response:
 @router.get("/library", response_model=LibraryPage)
 def library(
     conn: Conn,
-    domain: str | None = Query(None, description="Filter to one domain"),
+    domain: list[str] = Query(default_factory=list, description="Only these domains"),
+    q: str | None = Query(None, description="Search within what you have rated"),
+    sort: str | None = Query(None, description=f"One of {list(LIBRARY_SORTS)}"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> LibraryPage:
-    """What you have rated, newest first."""
+    """What you have rated, newest first unless ``sort`` says otherwise."""
     total, rows = query_ratings(
-        conn, domain=_validated_domain(domain), limit=limit, offset=offset
+        conn, domain=_validated_domains(domain), q=q.strip() if q else None,
+        sort=_validated_sort(sort, tuple(LIBRARY_SORTS)) or "recent",
+        limit=limit, offset=offset,
     )
     return LibraryPage(
         total=total,
@@ -341,8 +436,8 @@ def library(
 def recommend(
     conn: Conn,
     cfg: Cfg,
-    domain: str | None = Query(None, description="Recommend within one domain"),
-    k: int = Query(20, ge=1, le=50),
+    domain: list[str] = Query(default_factory=list, description="Only these domains"),
+    k: int = Query(20, ge=1, le=200),
     same_franchise: bool = Query(
         False, description="Include sequels and side stories of things you rated"
     ),
@@ -356,7 +451,7 @@ def recommend(
     domain at all -- which is exactly what collaborative filtering cannot do,
     since no user in the ratings corpus has rated across domains.
     """
-    domain = _validated_domain(domain)
+    domains = _validated_domains(domain)
     index = _similarity_index(cfg.embeddings_path)
     if index is None:
         raise HTTPException(
@@ -374,24 +469,21 @@ def recommend(
         )
 
     # Never recommend what you have already rated, nor -- as with /api/similar
-    # -- the sequels and side stories of it, which are the nearest neighbours
-    # of anything you liked and the least useful answer to "what next".
-    exclude = set(ratings)
-    n_before = len(exclude)
-    if not same_franchise:
-        for uid in ratings:
-            exclude |= franchise_representatives(conn, uid)
+    # -- more of the same franchise, which is the nearest neighbour of anything
+    # you liked and the least useful answer to "what next".
+    rated = set(ratings)
+    franchise = None if same_franchise else franchise_of(conn, ratings)
 
-    found = index.similar_to_vector(profile.vector, k=k, domain=domain, exclude=exclude)
-    items = {i.item_uid: i for i in (get_item(conn, n.item_uid) for n in found) if i is not None}
+    def fetch(n: int) -> list[Any]:
+        return list(
+            index.similar_to_vector(profile.vector, k=n, domain=domains, exclude=rated)
+        )
+
+    kept, n_suppressed = _fresh(conn, fetch, k, franchise)
     return RecommendPage(
-        domain=domain,
+        domain=_only(domains),
         n_rated=profile.n_rated,
         n_used=profile.n_used,
-        n_suppressed=len(exclude) - n_before,
-        neighbours=[
-            SimilarItem(score=n.score, item=items[n.item_uid])
-            for n in found
-            if n.item_uid in items
-        ],
+        n_suppressed=n_suppressed,
+        neighbours=[SimilarItem(score=n.score, item=item) for n, item in kept],
     )

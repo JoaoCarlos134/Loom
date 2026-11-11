@@ -130,6 +130,26 @@ def _parse_score(raw: dict[str, Any]) -> float | None:
     return score
 
 
+#: Where the 2018 dump says MAL's images live, and where they live now.
+_DEAD_IMAGE_HOST = "//myanimelist.cdn-dena.com/"
+_IMAGE_HOST = "//cdn.myanimelist.net/"
+
+
+def _image_url(value: Any) -> str | None:
+    """The cover URL, moved to the host that still answers.
+
+    Every one of the dump's 14,382 image URLs names ``myanimelist.cdn-dena.com``,
+    which no longer resolves at all -- so each was a populated field pointing
+    at nothing, and 2,672 works represented by a dump row drew a blank tile
+    while the database reported them as covered. MAL kept the paths when it
+    left that CDN: of 30 dump URLs sampled on ``cdn.myanimelist.net``, all 30
+    answered with an image. Any that have gone since fall back to a
+    placeholder in the UI, exactly as every other dead link does.
+    """
+    url = _clean(value)
+    return None if url is None else url.replace(_DEAD_IMAGE_HOST, _IMAGE_HOST, 1)
+
+
 def map_mal_row(raw: dict[str, Any], *, fetched_at: Any = None) -> UnifiedItem | None:
     """Map one CSV row to a UnifiedItem. None = unusable, skip it."""
     anime_id = _clean(raw.get("anime_id"))
@@ -189,7 +209,7 @@ def map_mal_row(raw: dict[str, Any], *, fetched_at: Any = None) -> UnifiedItem |
         popularity=members if members and members > 0 else None,
         mean_rating=_parse_score(raw),
         n_ratings=scored_by if scored_by and scored_by > 0 else None,
-        image_url=_clean(raw.get("image_url")),
+        image_url=_image_url(raw.get("image_url")),
         fetched_at=fetched_at or utcnow(),
         raw_json=raw,
     )

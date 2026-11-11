@@ -14,7 +14,7 @@ synopsis), reconciled across sources and calibrated onto one popularity scale,
 plus **25.2M user ratings** (19.2M anime, 6M books). Two recommendation models are built and served at
 `/api/similar`: content-based text embeddings and item-item collaborative
 filtering. You can rate things yourself, and `/api/recommend` will find works
-nearest your taste **in a domain you have never rated in**. **778 tests**,
+nearest your taste **in a domain you have never rated in**. **939 tests**,
 ruff- and mypy-clean.
 
 ![Loom's For you tab: manga, a TV series, films, books and anime recommended from seven ratings](docs/screenshots/for-you.png)
@@ -35,7 +35,7 @@ five media at once, ranked in a shared text-embedding space. The real UI, over a
   representative is chosen by content, never by source name, so any source stays removable.
 - **Claims are measured.** Similarity is scored against adaptation links the sources assert, with the
   pairs whose titles differ reported apart, because a shared title alone makes the headline number easy.
-- **Built to run anywhere.** 778 tests that never touch the network, ruff and mypy clean, CI on Windows,
+- **Built to run anywhere.** 939 tests that never touch the network, ruff and mypy clean, CI on Windows,
   and a setup that needs no admin rights.
 
 ## Quick start
@@ -121,6 +121,8 @@ The registered ingesters, with the row counts of the last full build:
 | `book_goodbooks` | goodbooks-10k, GitHub CSVs | 10k items | ~4 s, no credential |
 | `music_musicbrainz` | MusicBrainz + Deezer | 6,556 artists | hours; MusicBrainz asks 1 req/s |
 | `book_openlibrary` | Open Library | 9,049 enriched | a few hours at 3 req/s; the synopses goodbooks lacks |
+| `music_commons` | Wikidata + Wikimedia Commons | 1,811 portraits | ~80 s, 33 requests; freely licensed |
+| `music_deezer` | Deezer ids already stored | 4,501 pictures | under a second, no request; fallback where Commons has none |
 | `anime_mal_ratings` | same Kaggle archive | 19.2M ratings | ~75 s, grows the DB to ~1.3 GB |
 | `book_goodbooks_ratings` | goodbooks-10k, GitHub CSV | 6.0M ratings | ~70 s, 72 MB download, no credential |
 
@@ -169,7 +171,7 @@ uv run python app.py --no-ui     # serve only, for curl/httpie against the API
 ### 6. Tests and checks
 
 ```powershell
-uv run pytest          # 778 tests, none touching the network
+uv run pytest          # 939 tests, none touching the network
 uv run ruff check .    # lint
 uv run mypy            # type check
 ```
@@ -241,7 +243,7 @@ stays **on** — we are not disabling certificate checks.
 app.py                    pywebview window  ──┐
                                               │ http://127.0.0.1:<free port>
 src/recsys/api/server.py  FastAPI  ───────────┘
-              routes.py   /api/health /api/items /api/items/{uid}
+              routes.py   /api/health /api/items /api/items/{uid} /api/tags
                           /api/similar/{uid} /api/stats
                           /api/ratings/{uid} /api/library /api/recommend
               ui/         plain HTML + CSS + vanilla JS, served as static files
@@ -283,6 +285,8 @@ src/recsys/ingest/
   book_goodbooks.py       goodbooks-10k CSVs → UnifiedItem
   music_musicbrainz.py    composers the catalog credits → UnifiedItem
   book_openlibrary.py     Open Library work text → UnifiedItem
+  music_commons.py        Wikimedia Commons portraits → UnifiedItem
+  music_deezer.py         Deezer pictures, from stored ids → UnifiedItem
   ratings_mal_csv.py      Kaggle MAL user lists → ratings rows (a sibling
                           contract, not an Ingester — see below)
   ratings_goodbooks.py    goodbooks-10k ratings → ratings rows, 1-5 stars doubled
@@ -460,15 +464,16 @@ worked around.
 | Route | Notes |
 |---|---|
 | `GET /api/health` | liveness + item count; `app.py` polls this before opening the window |
-| `GET /api/items?domain=&q=&limit=&offset=` | `q` hits the FTS index, bm25-ranked |
+| `GET /api/items?domain=&q=&tag=&year_min=&year_max=&min_rating=&sort=&limit=&offset=` | `q` hits the FTS index, bm25-ranked. `domain` and `tag` repeat: several domains widen, several tags narrow. `sort` is `popularity`, `rating` (vote-weighted), `newest`, `oldest` or `title` |
+| `GET /api/tags?domain=&q=&limit=` | the most-carried tags and their counts, for a picker |
 | `GET /api/items/{item_uid}` | `item_uid` is a path param — it contains `:` |
-| `GET /api/similar/{item_uid}?method=&domain=&k=` | k nearest works; `method=content` (text embeddings) or `cf` (ratings), optionally within one `domain`. Suppresses the work's own franchise unless `same_franchise=true` |
+| `GET /api/similar/{item_uid}?method=&domain=&k=` | k nearest works; `method=content` (text embeddings) or `cf` (ratings), optionally within chosen `domain`s. Holds back the work's own franchise — sequels, adaptations, and same-titled rows from other sources — unless `same_franchise=true` |
 | `GET /api/stats` | per-domain counts, sources, last successful ingest |
 | `PUT /api/ratings/{item_uid}` | rate a work 1-10. Idempotent — rating it again is a correction. Resolved onto the row representing the work, so rating it from two of its rows is one rating |
 | `GET /api/ratings/{item_uid}` | your score for one work, or 404 |
 | `DELETE /api/ratings/{item_uid}` | forget it. The only deletion outside `prune.py` |
-| `GET /api/library?domain=&limit=&offset=` | what you have rated, newest first |
-| `GET /api/recommend?domain=&k=` | works nearest your taste. 409 if you have rated nothing the matrix can place, 503 if the matrix is unbuilt |
+| `GET /api/library?domain=&q=&sort=&limit=&offset=` | what you have rated, newest first; `sort` is `recent`, `rating` or `title` |
+| `GET /api/recommend?domain=&k=&same_franchise=` | works nearest your taste, without more of the franchises you rated unless asked. 409 if you have rated nothing the matrix can place, 503 if the matrix is unbuilt |
 
 Interactive docs at `/docs` while the server runs.
 

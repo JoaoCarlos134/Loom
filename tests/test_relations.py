@@ -127,7 +127,11 @@ def test_related_uids_filters_by_relation(conn):
 
 
 def test_the_two_relation_sets_do_not_overlap(conn):
-    """A relation cannot be both a cross-domain bridge and a thing to suppress."""
+    """A relation is a cross-domain bridge or a within-franchise edge, not both.
+
+    The model is scored against the first kind and not the second, which is why
+    they stay two sets -- even though a recommendation holds back both (see
+    ``SUPPRESSED_RELATIONS``)."""
     assert not (ADAPTATION_RELATIONS & FRANCHISE_RELATIONS)
 
 

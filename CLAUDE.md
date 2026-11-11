@@ -76,7 +76,7 @@ for what comes next.
 
 ```powershell
 uv sync                                       # install from uv.lock
-uv run pytest                                 # 778 tests, none touch the network
+uv run pytest                                 # 939 tests, none touch the network
 uv run python scripts/bootstrap.py            # init schema + run ingesters
 uv run python scripts/bootstrap.py --only anime_mal_csv --limit 100
 uv run python scripts/bootstrap.py --only anime_mal_ratings   # 19.2M ratings, ~75 s
@@ -85,7 +85,10 @@ uv run python scripts/bootstrap.py --only manga_anilist        # 2nd domain, ~2 
 uv run python scripts/bootstrap.py --only movie_tmdb --only tv_tmdb  # needs TMDB creds
 uv run python scripts/bootstrap.py --only book_goodbooks       # 10k books, ~4 s
 uv run python scripts/bootstrap.py --only music_musicbrainz    # composers, 1 req/s
+uv run python scripts/bootstrap.py --only music_commons --only music_deezer  # artist pictures
+uv run python scripts/bootstrap.py --no-ingest                 # rebuild derived tables only
 uv run python scripts/bootstrap.py --no-ingest --prune-dry-run # what filters reject
+uv run python scripts/remap.py --only book_openlibrary --field image_url  # mapper fix, offline
 uv run python scripts/embed.py                # build the embedding matrix, ~2.5 h
 uv run python scripts/embed.py --evaluate     # score it against adaptation links
 uv run python scripts/cf.py                   # item-item CF from 19.2M ratings, ~2 min
@@ -192,6 +195,65 @@ indifferent to which kind they hold. Same three-step seam either way.
   because it stores what both decided. When it is empty `db.py` falls back to
   the live joins -- a catalog that has never been linked must still list, and
   an empty shelf on a populated database is the worst way for a cache to fail.
+
+- **`works` also holds what a listing filters and sorts on, and after a schema
+  change it must be rebuilt.** Year and score ride on the row *filled from the
+  work's siblings* (8,399 of 10,000 book works have no year on their
+  representative), tags sit in `work_tags`, and the picker's vocabulary in
+  `tag_counts` -- a `json_each` walk for one tag was 265 ms. Migration 7 empties
+  `works` on purpose so reads fall back to the live joins rather than filter on
+  NULLs; run `bootstrap.py --no-ingest` after pulling it. Several tags are ANDed:
+  a second tag narrows.
+
+- **"Highest rated" sorts on `rating_key`, never on `mean_rating`.** By raw mean
+  the catalog's best work was a road-safety short with one vote of 10.
+  `works._weigh_ratings` shrinks each score toward its domain's mean by
+  `m` votes, where `m` is that domain's *median* vote count, measured at each
+  rebuild -- rejected: any constant, because half the rated TV shows have under
+  77 votes and half the rated books over 21,157. Filters still use
+  `mean_rating`, so "8 and up" means the number on the card.
+
+- **Same-franchise suppression is two mechanisms, each with a measured guard.**
+  `relations.franchise_representatives` walks sequel *and adaptation* edges
+  transitively but never *through* a work with two parents: unlimited, the walk
+  took *Dragon Ball Z* to *ONE PIECE* via a festival short. `CHARACTER` and
+  `OTHER` edges are excluded (the former fuses 4,599 works into one group).
+  `franchise.py` then matches titles, because TMDB and book rows share no id
+  with the anime they belong to -- using only the titles of the works actually
+  rated (franchise-wide names hid the *MONSTER* manga for *Golden Kamuy*
+  raters) and never a one-word stem (`Mission:`, `Fate/`). A title match is
+  allowed here and forbidden in `link.py` because the stakes differ: a false
+  link hides a work everywhere, a false match costs one slot and
+  `same_franchise=true` shows it. The numbers came from one-off probes over the
+  1,500 most popular anime, not from a kept script; re-measure before loosening
+  either guard.
+
+- **A URL in `image_url` is not a cover until something answers at it.** Three
+  gaps hid behind non-null fields: every 2018 MAL dump URL named a host that no
+  longer resolves, a third of goodbooks' pointed at one "no photo" file, and
+  Open Library rows ignored the cover ids in their own payload. Fix covers in
+  the mapper and apply them with `scripts/remap.py`, which re-runs a mapper over
+  stored `raw_json` and writes *only the named columns* -- goodbooks takes its
+  tags from a second file, so a whole-row remap would erase them. Open Library
+  covers go by cover id, not ISBN (ISBN lookups are limited to 100 per 5 min).
+
+- **Music portraits come from Wikimedia Commons first and Deezer second.**
+  `music_commons` joins on the MusicBrainz id through Wikidata and covers 1,811
+  of 6,556 artists with freely licensed pictures. `music_deezer` covers the
+  rest it can (4,730 of 6,556 together) from ids already in the catalog, with no
+  request -- label promotional photos, hot-linked, left out of the first pass
+  for that reason and added at the owner's request on 2026-11-10. Commons wins
+  where both exist because `fill_from_siblings` reads donors in uid order and
+  `commons` sorts before `deezer`; nothing names a source. A picture row must
+  never win the primary election (the embedding matrix holds representatives
+  only); the last tiebreak is the uid, where both sort below `musicbrainz`, and
+  `tests/test_covers.py` pins all of it. Everything without a cover gets a
+  generated tile in the UI, coloured from its title.
+
+- **`domain` is repeatable on every listing route.** `?domain=anime&domain=movie`
+  is "these and not the rest"; none, `all`, or every domain named is no filter.
+  One domain stays an equality in SQL so `idx_works_domain_sort` still serves
+  the ordering. Responses name a `domain` only when exactly one was asked for.
 
 - **`relations` is not `links`.** `links` means "these rows are the same work".
   An adaptation or a sequel is the opposite claim -- two different works, one

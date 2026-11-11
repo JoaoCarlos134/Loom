@@ -225,10 +225,11 @@ def test_the_domain_filter_offers_every_domain():
     """The dropdown shipped without `manga` -- the largest domain in the
     catalog -- so the biggest slice of it was unreachable from the UI. Pinned
     against DOMAINS rather than a hand-written list, so adding a domain cannot
-    quietly leave the filter behind again.
+    quietly leave the filter behind again. (The dropdown is a row of toggles
+    now; the failure it guards against is the same.)
     """
     from recsys.api.server import UI_DIR
 
     html = (UI_DIR / "index.html").read_text(encoding="utf-8")
-    missing = [d for d in DOMAINS if f'<option value="{d}">' not in html]
-    assert not missing, f"index.html has no filter option for {missing}"
+    missing = [d for d in DOMAINS if f'data-domain="{d}"' not in html]
+    assert not missing, f"index.html has no domain toggle for {missing}"
