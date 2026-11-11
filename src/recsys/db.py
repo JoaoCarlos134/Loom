@@ -1144,6 +1144,55 @@ def groups_of(conn: sqlite3.Connection, uids: Sequence[str]) -> dict[str, str]:
     return out
 
 
+def works_passing(
+    conn: sqlite3.Connection,
+    uids: Sequence[str],
+    *,
+    tags: Sequence[str] = (),
+    year_min: int | None = None,
+    year_max: int | None = None,
+    min_rating: float | None = None,
+) -> set[str]:
+    """Which of ``uids`` (representatives) pass Browse's filters.
+
+    The same claims `query_items` makes, for a list of works chosen some other
+    way -- a recommendation page: every tag carried, a year inside the range,
+    a score whose one-decimal print is at least ``min_rating``. Read from
+    `works` when it is built; otherwise from the rows themselves, unfilled,
+    exactly as Browse's fallback reads them.
+    """
+    if not (tags or year_min is not None or year_max is not None or min_rating is not None):
+        return set(uids)
+    fast = _works_built(conn)
+    table, year, rating = ("works w", "w.year", "w.mean_rating") if fast else (
+        "items i", "i.year", "i.mean_rating")
+    key = "w.item_uid" if fast else "i.item_uid"
+    has_tag = ("w.item_uid IN (SELECT item_uid FROM work_tags WHERE tag = ?)" if fast
+               else "EXISTS (SELECT 1 FROM json_each(i.tags) WHERE value = ?)")
+    where: list[str] = []
+    params: list[Any] = []
+    for tag in tags:
+        where.append(has_tag)
+        params.append(tag)
+    for column, op, value in ((year, ">=", year_min), (year, "<=", year_max)):
+        if value is not None:
+            where.append(f"{column} {op} ?")
+            params.append(value)
+    if min_rating is not None:
+        where.append(f"ROUND({rating}, 1) >= ?")
+        params.append(min_rating)
+    out: set[str] = set()
+    for chunk in _chunks(list(uids), 400):
+        marks = ",".join("?" * len(chunk))
+        out.update(
+            r[0] for r in conn.execute(
+                f"SELECT {key} FROM {table} WHERE {key} IN ({marks}) AND {' AND '.join(where)}",
+                [*chunk, *params],
+            )
+        )
+    return out
+
+
 def top_tags(
     conn: sqlite3.Connection,
     *,

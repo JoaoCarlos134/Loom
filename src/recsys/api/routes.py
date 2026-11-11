@@ -32,6 +32,7 @@ from recsys.db import (
     series_sizes,
     set_rating,
     top_tags,
+    works_passing,
 )
 from recsys.link import representative_uid, work_members
 from recsys.models.profile import build_profile
@@ -167,6 +168,7 @@ def _fill_page(
     domains: Sequence[str],
     suppress: set[str],
     collapse: bool,
+    allowed: Callable[[list[str]], set[str]] | None = None,
 ) -> tuple[list[_Hit], int, int]:
     """Up to ``k`` neighbours, one per story, and how many were hidden on the way.
 
@@ -192,6 +194,11 @@ def _fill_page(
             # Checked again after translation: a stale row filed under one
             # domain can belong to a work another domain represents.
             hits = [h for h in hits if h.domain in domains]
+        if allowed is not None:
+            # Browse's filters, applied before the page is cut so a strict
+            # one still fills it from further down the ranking.
+            passing = allowed([h.item_uid for h in hits])
+            hits = [h for h in hits if h.item_uid in passing]
         group = groups_of(conn, [h.item_uid for h in hits]) if collapse else {}
         kept: list[_Hit] = []
         seen: set[str] = set()
@@ -261,6 +268,40 @@ def health(conn: Conn) -> Health:
         return Health(status="degraded", version=__version__, db_ready=False, n_items=0)
 
 
+def _validated_tags(tag: Sequence[str]) -> list[str]:
+    """Normalise and check a repeatable ``tag`` parameter."""
+    # Tags are stored lowercased by the schema, so a filter is folded the same
+    # way rather than silently matching nothing for "Sci-Fi".
+    tags = [t.strip().lower() for t in tag if t.strip()]
+    if len(tags) > MAX_TAGS:
+        # Each tag is a subquery, and SQLite refuses an expression tree past a
+        # depth it is not this route's business to discover with a 500.
+        raise HTTPException(422, f"at most {MAX_TAGS} tags can be combined")
+    return tags
+
+
+#: Orders a recommendation page can be read in. The default -- none -- is
+#: closeness to your taste, which is what the page is. These reorder the works
+#: it chose; they do not choose different ones. "rating" is the score on the
+#: card: a page mixes domains, and the vote-weighted key Browse sorts on is
+#: per domain, so it cannot order one.
+RECOMMEND_SORTS: tuple[str, ...] = ("rating", "newest", "oldest", "title")
+
+
+def _sorted_hits(hits: list[_Hit], items: dict[str, UnifiedItem], order: str) -> list[_Hit]:
+    """``hits`` reordered by a field of their items; ties keep taste order."""
+    def key(hit: _Hit) -> tuple[bool, Any]:
+        it = items.get(hit.item_uid)
+        if order == "title":
+            return (False, it.title.casefold() if it else "")
+        value = None if it is None else (it.mean_rating if order == "rating" else it.year)
+        if value is None:  # an undated or unscored work is never first
+            return (True, 0)
+        return (False, -value if order in ("rating", "newest") else value)
+
+    return sorted(hits, key=key)
+
+
 def _validated_sort(sort: str | None, allowed: Sequence[str]) -> str | None:
     """Normalise and check a ``sort`` query parameter. ``None`` means the default."""
     if sort is None or not sort.strip():
@@ -289,13 +330,7 @@ def list_items(
 ) -> ItemsPage:
     domains = _validated_domains(domain)
     q = q.strip() if q else None
-    # Tags are stored lowercased by the schema, so a filter is folded the same
-    # way rather than silently matching nothing for "Sci-Fi".
-    tags = [t.strip().lower() for t in tag if t.strip()]
-    if len(tags) > MAX_TAGS:
-        # Each tag is a subquery, and SQLite refuses an expression tree past a
-        # depth it is not this route's business to discover with a 500.
-        raise HTTPException(422, f"at most {MAX_TAGS} tags can be combined")
+    tags = _validated_tags(tag)
     total, items = query_items(
         conn, domain=domains, q=q, tags=tags, year_min=year_min, year_max=year_max,
         min_rating=min_rating, sort=_validated_sort(sort, ITEM_SORTS),
@@ -561,6 +596,13 @@ def recommend(
         description="Include adaptations, sequels and series volumes of what you rated, "
                     "and stop keeping one result per story",
     ),
+    tag: list[str] = Query(default_factory=list, description="Carry every one of these tags"),
+    year_min: int | None = Query(None, ge=1000, le=2100),
+    year_max: int | None = Query(None, ge=1000, le=2100),
+    min_rating: float | None = Query(None, ge=0.0, le=10.0),
+    sort: str | None = Query(
+        None, description=f"One of {list(RECOMMEND_SORTS)}; default is closeness to your taste"
+    ),
 ) -> RecommendPage:
     """Works nearest *your taste*, optionally in a domain you have never rated in.
 
@@ -572,6 +614,8 @@ def recommend(
     since no user in the ratings corpus has rated across domains.
     """
     domains = _validated_domains(domain)
+    tags = _validated_tags(tag)
+    order = _validated_sort(sort, RECOMMEND_SORTS)
     index = _similarity_index(cfg.embeddings_path)
     if index is None:
         raise HTTPException(
@@ -607,8 +651,13 @@ def recommend(
         domains=domains,
         suppress=set(),
         collapse=not same_franchise,
+        allowed=lambda uids: works_passing(
+            conn, uids, tags=tags, year_min=year_min, year_max=year_max, min_rating=min_rating
+        ),
     )
     items = {i.item_uid: i for i in (get_item(conn, n.item_uid) for n in found) if i is not None}
+    if order is not None:
+        found = _sorted_hits(found, items, order)
     return RecommendPage(
         domain=_only(domains),
         n_rated=profile.n_rated,

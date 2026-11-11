@@ -48,12 +48,12 @@
     <!-- Each control names the views it applies to; app.js hides the rest, so
          a view never shows a filter it would silently ignore. -->
     <div class="toolbar" id="toolbar">
-      <label class="field" data-views="browse library">
+      <label class="field" data-views="browse recommend library">
         <span class="field-label">Sort</span>
         <select id="sort" aria-label="Sort order"></select>
       </label>
 
-      <div class="field field-grow" data-views="browse">
+      <div class="field field-grow" data-views="browse recommend">
         <span class="field-label">Tags</span>
         <div class="tag-picker">
           <span id="tag-chips" class="chips"></span>
@@ -63,7 +63,7 @@
         </div>
       </div>
 
-      <div class="field" data-views="browse">
+      <div class="field" data-views="browse recommend">
         <span class="field-label">Year</span>
         <input id="year-min" class="year" type="number" min="1000" max="2100" placeholder="from"
                aria-label="Earliest year">
@@ -72,7 +72,7 @@
                aria-label="Latest year">
       </div>
 
-      <label class="field" data-views="browse">
+      <label class="field" data-views="browse recommend">
         <span class="field-label">Score</span>
         <select id="min-rating" aria-label="Minimum score">
           <option value="">Any</option>
@@ -94,12 +94,12 @@
         <select id="page-size" aria-label="Items per page"></select>
       </label>
 
-      <button id="clear-filters" type="button" class="link-btn" data-views="browse" hidden>
+      <button id="clear-filters" type="button" class="link-btn" data-views="browse recommend" hidden>
         Clear filters
       </button>
     </div>
 
-    <div id="tag-suggest" class="tag-suggest" data-views="browse" hidden></div>
+    <div id="tag-suggest" class="tag-suggest" data-views="browse recommend" hidden></div>
 
     <div class="statusbar">
       <span id="result-count" class="count"></span>

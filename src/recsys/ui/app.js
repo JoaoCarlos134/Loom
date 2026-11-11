@@ -21,6 +21,14 @@
       ["oldest", "Oldest first"],
       ["title", "Title A–Z"]
     ],
+    // Reorders what the profile chose; the default is the profile's own order.
+    recommend: [
+      ["", "Best match"],
+      ["rating", "Highest rated"],
+      ["newest", "Newest first"],
+      ["oldest", "Oldest first"],
+      ["title", "Title A–Z"]
+    ],
     library: [
       ["", "Recently rated"],
       ["rating", "My rating"],
@@ -61,7 +69,7 @@
 
   var state = {
     view: "browse", q: "", domains: [],
-    sort: { browse: "", library: "" },
+    sort: { browse: "", recommend: "", library: "" },
     tags: [], yearMin: null, yearMax: null, minRating: "",
     pageSize: prefs.pageSize, sameFranchise: prefs.sameFranchise,
     offset: 0, total: 0, loading: false, done: false, seq: 0
@@ -265,8 +273,10 @@
   // ---- filters ----------------------------------------------------------
 
   function hasFilters() {
-    return Boolean(state.q || state.tags.length || state.yearMin !== null ||
-      state.yearMax !== null || state.minRating || state.sort.browse);
+    // The filters are shared by Browse and For you; search is Browse's alone.
+    return Boolean((state.view === "browse" && state.q) || state.tags.length ||
+      state.yearMin !== null || state.yearMax !== null || state.minRating ||
+      state.sort[state.view]);
   }
 
   function renderTagChips() {
@@ -360,7 +370,7 @@
     state.tags = [];
     state.yearMin = state.yearMax = null;
     state.minRating = "";
-    state.sort.browse = "";
+    state.sort[state.view] = "";
     els.search.value = "";
     els.yearMin.value = els.yearMax.value = "";
     els.minRating.value = "";
@@ -387,7 +397,7 @@
     Array.prototype.forEach.call(nodes, function (node) {
       node.hidden = node.dataset.views.split(" ").indexOf(state.view) === -1;
     });
-    var filtered = state.view === "browse" && hasFilters();
+    var filtered = state.view !== "library" && hasFilters();
     els.clearFilters.hidden = !filtered;
     els.emptyClear.hidden = !filtered;
   }
@@ -408,6 +418,8 @@
       // the tail of a taste ranking is not worth scrolling into.
       p.set("k", String(state.pageSize));
       if (state.sameFranchise) p.set("same_franchise", "true");
+      addFilters(p);
+      if (state.sort.recommend) p.set("sort", state.sort.recommend);
       return "/api/recommend?" + p.toString();
     }
     p.set("limit", String(state.pageSize));
@@ -416,11 +428,16 @@
     if (state.sort[state.view]) p.set("sort", state.sort[state.view]);
     if (state.view === "library") return "/api/library?" + p.toString();
 
+    addFilters(p);
+    return "/api/items?" + p.toString();
+  }
+
+  // Browse's filters, which For you takes too.
+  function addFilters(p) {
     state.tags.forEach(function (tag) { p.append("tag", tag); });
     if (state.yearMin !== null) p.set("year_min", String(state.yearMin));
     if (state.yearMax !== null) p.set("year_max", String(state.yearMax));
     if (state.minRating) p.set("min_rating", state.minRating);
-    return "/api/items?" + p.toString();
   }
 
   /* The three views answer with three shapes. Normalising here keeps one
@@ -553,6 +570,9 @@
         showEmpty("Nothing here yet",
           "Run uv run python scripts/bootstrap.py to populate the catalog.");
       }
+    } else if (hasFilters()) {
+      showEmpty("Nothing near your taste matches these filters",
+        "Every tag has to be carried and every bound met. Loosen one, or start over.");
     } else {
       showEmpty("Nothing to recommend", "Nothing in this domain is near what you have rated.");
     }
