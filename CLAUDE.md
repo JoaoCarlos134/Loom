@@ -4,7 +4,7 @@ Cross-domain hybrid recommender (anime / manga / books / music / movies / TV), l
 desktop app, no admin rights. `README.md` holds the architecture and its "Why these
 choices"; `ROADMAP.md` holds where the project is and what comes next.
 
-**Status (2026-11-11):** 1.0 release candidate (`1.0.0rc1`). The two lines
+**Status (2026-11-11, end of day):** 1.0 release candidate (`1.0.0rc1`); read "Pick up here" first. The two lines
 of work that diverged at `7ae5dde` are one again: the 1.0 line
 (`claude/sweet-ride-u2k95y`) is the base, the other line's browse filters,
 covers and music pictures are ported onto it (see Decisions). The seven bugs measured on the full build are fixed
@@ -121,6 +121,73 @@ stdlib venv only.
 - **2026-09 Calibrate popularity on overlap, not percentile-within-source.**
   README "Why these choices".
 - **2026-08 Resolve duplicates with `links`, never merge.** README "Why these choices".
+
+## Pick up here: handoff from the Lactec machine (2026-11-11)
+
+Done that day on the Lactec machine, all on `main`: the two lines made one
+(Decisions, 2026-11-11), the crossover guard for groups, Browse's filters on
+For you, "where to watch" (`/api/watch`), English titles (`title_english`,
+migration 12, a toggle in the UI), the launchers `loom-window.cmd` /
+`loom-browser.cmd`. The stale branches (`claude/sweet-ride-u2k95y`,
+`claude/lucid-fermi-xwdzex`, `claude/hungry-moser-cdf4a5`) are deleted.
+
+**Not yet reviewed:** the owner will run `work-reviewer` over
+`6289f6f..main` (everything since the 1.0 line's last commit). Do that before
+building on it.
+
+**On the home machine, in this order** (the build there is at the *old*
+line's schema 7, like the copy that came over as `D:\Loom`):
+
+1. `git pull`. `uv.lock` changed (the 1.0 line's dependencies), so reinstall:
+   `uv sync`, or the stdlib-venv recipe above if Application Control blocks it.
+2. Back up `%LOCALAPPDATA%\Loom\recsys.db` (your `local:you` ratings live only
+   there). Then any script or the app opening it migrates 7 -> 12 by itself:
+   `db.init_db` recognises the old line's 7 (`work_tags`, no `id_map`) and
+   steps back to 6 first -- only caches are dropped, ratings and catalog rows
+   are kept (`tests/test_schema_lines.py`).
+3. `uv run python scripts/remap.py --only anime_anilist --only manga_anilist
+   --only anime_mal_csv --field title_english` -- offline, ~20 s. On the
+   Lactec copy it filled 22,997 rows.
+4. `uv run python scripts/bootstrap.py --only idmap_wikidata` (one Wikidata
+   query; links each anime to its own TMDB entry, which "where to watch" and
+   the groups both use), then `uv run python scripts/bootstrap.py --no-ingest`.
+5. `uv run python scripts/groups.py` should print what it printed on the copy:
+   guard OFF joins all four crossover pairs, guard ON keeps them apart, every
+   same-story pair together, 99 works held. With the id map in, group sizes
+   will move (anime gain their TMDB rows); the pairs should not.
+6. `uv run python scripts/embed.py --check`, then item 1 of "Where to continue".
+7. With `TMDB_READ_TOKEN` in `.env`, the detail view's "Where to watch" names
+   the services (stream/rent/buy) for `REGION`; without it, only the link.
+   Check one film and one anime by hand -- the live call has never run (tests
+   use a fake; the Lactec machine has no token).
+8. Open the app (`loom-window.cmd`) and look at For you's filters, the
+   "English titles" chip and the watch block: built and tested, never seen.
+
+**Observations from that day:**
+
+- Ratings do not travel. The Lactec machine's `%LOCALAPPDATA%\Loom` is a copy
+  of `D:\Loom` taken 2026-11-11 (13 `local:you` ratings); ratings made on
+  either machine since then exist only on that machine.
+- The Lactec copy is already at 12, derived tables rebuilt (81,188 cards),
+  English titles filled; `idmap_wikidata` was *not* run there. `D:\Loom` is
+  the untouched transfer copy and must never be written.
+- Measured with the guard (top 300 anime, against the old line's query-time
+  walk, median Jaccard 1.00): known miss *Hanma Baki* -> *Kengan Ashura*; a
+  held crossover is in no group itself, so it suppresses only its direct
+  edges (*Dragon Ball Z* hides 31 works where the walk hid 68; 5 of the top
+  300 anime are held).
+- `tests/test_starter.py` sometimes errors on Windows in teardown
+  (WinError 145 / 2 on an SQLite `-shm` sidecar). It happens on the untouched
+  1.0 line too; not fixed.
+- Behaviours to know: a search with an explicit sort filters on the match and
+  does not fold book series; For you's "Highest rated" sorts by the card's
+  score, not Browse's per-domain vote-weighted key; "where to watch" caches a
+  title's providers in memory for 12 h.
+- Lactec-only: the editor's Python processes hold the repo's `.venv`, so
+  `uv sync` there fails with "Acesso negado"; work used
+  `UV_PROJECT_ENVIRONMENT=%LOCALAPPDATA%\loom-venv-integrate`. Two locked
+  leftovers (`.claude\worktrees\hungry-moser-cdf4a5`, `.git\worktrees\*`)
+  can be deleted once nothing holds them.
 
 ## Where to continue
 

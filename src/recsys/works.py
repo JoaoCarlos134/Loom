@@ -38,6 +38,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from recsys.db import title_key, title_tokens
@@ -147,6 +148,57 @@ def _weigh_ratings(conn: sqlite3.Connection) -> None:
         )
 
 
+def story_components(
+    edges: Sequence[tuple[str, str, str]],
+    rep_of: dict[str, str],
+    *,
+    crossover_guard: bool = True,
+) -> tuple[_Components, set[str]]:
+    """Union-find over ``(src, dst, relation)`` edges in representative space,
+    and the works held back as crossovers.
+
+    A work derived from two works -- a festival short filed under both
+    *Dragon Ball Z* and *ONE PIECE*, a joint one-shot -- belongs to each and
+    joins neither to the other. Unioned through, such bridges welded those two
+    (141 works), *Nanatsu no Taizai* to *FAIRY TAIL*, *Kaguya-sama* to
+    *[Oshi no Ko]* and *Nisekoi* to *Monogatari* on the full build, and no
+    component got near `max_group_size`, so the cap never caught it
+    (`scripts/groups.py` prints all of this). Its edges are held back, and
+    let in only once all its parents have turned out to be one story anyway
+    (an OVA set between two seasons). AniList often records one end only, so
+    parents come from both. ``crossover_guard=False`` is the plain components,
+    kept so the difference can be measured.
+    """
+    parents: dict[str, set[str]] = defaultdict(set)
+    for src, dst, relation in edges:
+        a, b = rep_of.get(src, src), rep_of.get(dst, dst)
+        if relation == "PARENT":
+            parents[a].add(b)
+        elif relation in DERIVED_RELATIONS:
+            parents[b].add(a)
+    held = {u for u, ps in parents.items() if len(ps - {u}) >= 2} if crossover_guard else set()
+
+    groups = _Components()
+    waiting: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    for src, dst, _relation in edges:
+        a, b = rep_of.get(src, src), rep_of.get(dst, dst)
+        if a in held or b in held:
+            waiting[a if a in held else b].append((a, b))
+        else:
+            groups.union(a, b)
+    released = True
+    while released:  # one release can make another's parents one story
+        released = False
+        for uid in [u for u in waiting if len({groups.find(p) for p in parents[u] - {u}}) == 1]:
+            for a, b in waiting.pop(uid):
+                if a not in waiting and b not in waiting:
+                    groups.union(a, b)
+                else:  # its other end is still held; union once that one is let in
+                    waiting[b if a == uid else a].append((a, b))
+            released = True
+    return groups, set(waiting)
+
+
 def rebuild_works(
     conn: sqlite3.Connection,
     *,
@@ -221,45 +273,13 @@ def rebuild_works(
         sorted(GROUP_RELATIONS),
     ).fetchall()
 
-    # A work derived from two works -- a festival short filed under both
-    # *Dragon Ball Z* and *ONE PIECE*, a joint one-shot -- belongs to each and
-    # joins neither to the other. Unioned through, such bridges welded those
-    # two (141 works) and *Kaguya-sama* to *[Oshi no Ko]* on the full build,
-    # and no component got near `max_group_size`, so the cap never caught it.
-    # Its edges are held back, and let in only once all its parents have
-    # turned out to be one story anyway (an OVA set between two seasons).
-    # AniList often records one end only, so parents come from both.
-    parents: dict[str, set[str]] = defaultdict(set)
-    for src, dst, relation in edges:
-        a, b = rep_of.get(src, src), rep_of.get(dst, dst)
-        if relation == "PARENT":
-            parents[a].add(b)
-        elif relation in DERIVED_RELATIONS:
-            parents[b].add(a)
-    held = {u for u, ps in parents.items() if len(ps - {u}) >= 2}
-
-    groups, series = _Components(), _Components()
+    groups, _ = story_components(edges, rep_of)
+    series = _Components()
     series_rows: set[str] = set()
-    waiting: dict[str, list[tuple[str, str]]] = defaultdict(list)
     for src, dst, relation in edges:
-        a, b = rep_of.get(src, src), rep_of.get(dst, dst)
-        if a in held or b in held:
-            waiting[a if a in held else b].append((a, b))
-        else:
-            groups.union(a, b)
         if relation == SERIES_RELATION:
-            series.union(a, b)
+            series.union(rep_of.get(src, src), rep_of.get(dst, dst))
             series_rows.update((src, dst))
-    released = True
-    while released:  # one release can make another's parents one story
-        released = False
-        for uid in [u for u in waiting if len({groups.find(p) for p in parents[u] - {u}}) == 1]:
-            for a, b in waiting.pop(uid):
-                if a not in waiting and b not in waiting:
-                    groups.union(a, b)
-                else:  # its other end is still held; union once that one is let in
-                    waiting[b if a == uid else a].append((a, b))
-            released = True
 
     group_of: dict[str, str] = {}
     oversized: list[tuple[int, str]] = []
