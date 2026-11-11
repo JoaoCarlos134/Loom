@@ -72,6 +72,33 @@ Cross-domain hybrid recommender (anime / manga / books / music / movies / TV), l
 desktop app, no admin rights. See `README.md` for architecture and `ROADMAP.md`
 for what comes next.
 
+## Open decision (2026-11-11): two diverged lines
+
+`main` and `origin/claude/sweet-ride-u2k95y` both moved on from `7ae5dde` and do
+not merge: a trial merge conflicts in 14 files (~47 hunks) and **both define a
+different migration 7** (sweet-ride has 7-10).
+
+- **sweet-ride** (31 commits, 1.0.0rc1, 972 tests): Wikidata id map linking
+  anime to TMDB by exact id, one listing entry per story + `/api/series`, richer
+  search ranking, `derive.py`, starter pack, `build.py`, `measure.py`,
+  packaging, source credits, Python 3.13/3.14.
+- **main** (960 tests): tag/year/score filters, sorts, page size, domain
+  toggles, `rating_key`, franchise suppression + switch, MAL image host fix,
+  Commons + Deezer pictures, `remap.py`.
+
+Recommended, not yet agreed: make sweet-ride the base and port onto it only what
+it lacks; main's migration becomes 11; reconcile the two franchise designs
+(collapse in listings vs hide from recommendations) rather than keep both.
+A database already at main's v7 must then be rebuilt from a v6 copy with the
+`local:you` ratings carried over. `origin/claude/lucid-fermi-xwdzex` (Loom.exe
+launcher, 1 commit) is also unmerged. Before building anything, check every
+remote branch, not just `origin/main`.
+
+On "train a model for same-franchise": ids first (the id map); a pairwise
+classifier only for rows with no id, trained on the ~47k AniList
+franchise/adaptation edges with a held-out hard half. Crossovers that adapt two
+manga are label noise, not learnable. Not started.
+
 ## Commands
 
 ```powershell
