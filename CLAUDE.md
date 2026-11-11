@@ -76,7 +76,7 @@ for what comes next.
 
 ```powershell
 uv sync                                       # install from uv.lock
-uv run pytest                                 # 939 tests, none touch the network
+uv run pytest                                 # 960 tests, none touch the network
 uv run python scripts/bootstrap.py            # init schema + run ingesters
 uv run python scripts/bootstrap.py --only anime_mal_csv --limit 100
 uv run python scripts/bootstrap.py --only anime_mal_ratings   # 19.2M ratings, ~75 s
@@ -249,6 +249,15 @@ indifferent to which kind they hold. Same three-step seam either way.
   only); the last tiebreak is the uid, where both sort below `musicbrainz`, and
   `tests/test_covers.py` pins all of it. Everything without a cover gets a
   generated tile in the UI, coloured from its title.
+
+- **Search relevance is name first, bm25 last.** bm25 alone opened "shingeki no
+  kyojin" on a recap special: it measures how much of a document the words are,
+  and a row with no synopsis is nearly all title. `query_items` now orders by
+  tier -- the title or an alt title *is* the query; every word is in a name;
+  synopsis only -- with calibrated popularity inside the first two and bm25
+  only inside the third. A score filter compares `ROUND(mean_rating, 1)`,
+  because the card prints one decimal and "8 and up" means what is printed.
+  Cost: a one-word stopword query ("the", 67k matches) takes ~0.6 s.
 
 - **`domain` is repeatable on every listing route.** `?domain=anime&domain=movie`
   is "these and not the rest"; none, `all`, or every domain named is no filter.

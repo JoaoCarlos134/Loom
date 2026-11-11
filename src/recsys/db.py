@@ -643,20 +643,25 @@ def _works_built(conn: sqlite3.Connection) -> bool:
     return bool(conn.execute("SELECT EXISTS(SELECT 1 FROM works)").fetchone()[0] == 1)
 
 
-def build_fts_query(q: str) -> str | None:
+def build_fts_query(q: str, *, names_only: bool = False) -> str | None:
     """Turn free user text into a safe FTS5 MATCH expression.
 
     User input never reaches FTS5 as syntax: every token is quoted as a string
     literal, so ``AND`` / ``*`` / ``"`` / ``NEAR`` typed in the search box are
     treated as ordinary words. The final token gets a prefix wildcard so
     as-you-type search matches partial words.
+
+    ``names_only`` restricts the match to what a work is *called* -- its title
+    and alternative titles -- leaving the synopsis out. The column filter is
+    ours, written here; the tokens inside it are quoted exactly as before.
     """
     tokens = _TOKEN_RE.findall(q or "")
     if not tokens:
         return None
     quoted = [f'"{t}"' for t in tokens[:-1]]
     quoted.append(f'"{tokens[-1]}"*')
-    return " ".join(quoted)  # FTS5's default operator is AND
+    terms = " ".join(quoted)  # FTS5's default operator is AND
+    return f"{{title alt_titles}} : ({terms})" if names_only else terms
 
 
 #: Orderings a listing can be asked for. Not listed: relevance, which is what a
@@ -732,11 +737,15 @@ def query_items(
     for tag in tags:
         where.append(has_tag)
         params.append(tag)
-    for bound, op, value in (("year", ">=", year_min), ("year", "<=", year_max),
-                             ("rating", ">=", min_rating)):
+    for bound, op, value in (("year", ">=", year_min), ("year", "<=", year_max)):
         if value is not None:
             where.append(f"{col[bound]} {op} ?")
             params.append(value)
+    if min_rating is not None:
+        # Rounded as the card rounds it. A work scoring 7.96 is printed "8.0",
+        # and a reader who asks for 8 and up is asking about what is printed.
+        where.append(f"ROUND({col['rating']}, 1) >= ?")
+        params.append(min_rating)
 
     orders = {
         "popularity": f"{col['pop']} DESC, {col['title']} ASC",
@@ -749,10 +758,40 @@ def query_items(
     if sort is not None and sort not in orders:
         raise ValueError(f"unknown sort {sort!r}; expected one of {ITEM_SORTS}")
 
+    order_params: list[Any] = []
     if match:
         base = f"FROM items_fts f JOIN items i ON i.rowid = f.rowid {joins}"
-        order = orders[sort] if sort else f"bm25(items_fts, 10.0, 4.0, 1.0), {col['pop']} DESC"
         count_base = base
+        if sort:
+            order = orders[sort]
+        else:
+            # Relevance, in three steps, because bm25 alone got the obvious
+            # case wrong: "shingeki no kyojin" opened on a recap special, which
+            # has no synopsis and therefore the densest match, with the series
+            # itself further down. bm25 measures how much of a document the
+            # words are; a reader typing a name wants the thing by that name.
+            #   0  it *is* the title, or one of the alternative titles
+            #   1  every word is in the title or an alternative title
+            #   2  the words are only in the synopsis
+            # Within 0 and 1 the better-known work comes first -- of forty
+            # things called "Shingeki no Kyojin ...", the one meant is the one
+            # most people know. bm25 keeps the say only in 2, where there is no
+            # name match to go on, and breaks ties everywhere.
+            names = build_fts_query(q or "", names_only=True)
+            tier = (
+                "CASE WHEN i.title = ? COLLATE NOCASE OR EXISTS ("
+                "SELECT 1 FROM json_each(i.alt_titles) WHERE value = ? COLLATE NOCASE) THEN 0 "
+                "WHEN i.rowid IN (SELECT rowid FROM items_fts WHERE items_fts MATCH ?) THEN 1 "
+                "ELSE 2 END"
+            )
+            order = (
+                f"{tier}, CASE WHEN i.rowid IN "
+                "(SELECT rowid FROM items_fts WHERE items_fts MATCH ?) "
+                f"THEN {col['pop']} END DESC, bm25(items_fts, 10.0, 4.0, 1.0), "
+                f"{col['pop']} DESC"
+            )
+            typed = " ".join((q or "").split())
+            order_params = [typed, typed, names, names]
     else:
         base = f"FROM items i {joins}"
         order = orders[sort or "popularity"]
@@ -766,7 +805,7 @@ def query_items(
     total = conn.execute(f"SELECT COUNT(*) {count_base}{tail}", params).fetchone()[0]
     rows = conn.execute(
         f"SELECT {_SELECT_COLS} {base}{tail} ORDER BY {order} LIMIT ? OFFSET ?",
-        [*params, limit, offset],
+        [*params, *order_params, limit, offset],
     ).fetchall()
     items = [UnifiedItem.from_row(r) for r in rows]
     return (int(total), fill_from_siblings(conn, items))

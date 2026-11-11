@@ -14,7 +14,7 @@ synopsis), reconciled across sources and calibrated onto one popularity scale,
 plus **25.2M user ratings** (19.2M anime, 6M books). Two recommendation models are built and served at
 `/api/similar`: content-based text embeddings and item-item collaborative
 filtering. You can rate things yourself, and `/api/recommend` will find works
-nearest your taste **in a domain you have never rated in**. **939 tests**,
+nearest your taste **in a domain you have never rated in**. **960 tests**,
 ruff- and mypy-clean.
 
 ![Loom's For you tab: manga, a TV series, films, books and anime recommended from seven ratings](docs/screenshots/for-you.png)
@@ -35,7 +35,7 @@ five media at once, ranked in a shared text-embedding space. The real UI, over a
   representative is chosen by content, never by source name, so any source stays removable.
 - **Claims are measured.** Similarity is scored against adaptation links the sources assert, with the
   pairs whose titles differ reported apart, because a shared title alone makes the headline number easy.
-- **Built to run anywhere.** 939 tests that never touch the network, ruff and mypy clean, CI on Windows,
+- **Built to run anywhere.** 960 tests that never touch the network, ruff and mypy clean, CI on Windows,
   and a setup that needs no admin rights.
 
 ## Quick start
@@ -171,7 +171,7 @@ uv run python app.py --no-ui     # serve only, for curl/httpie against the API
 ### 6. Tests and checks
 
 ```powershell
-uv run pytest          # 939 tests, none touching the network
+uv run pytest          # 960 tests, none touching the network
 uv run ruff check .    # lint
 uv run mypy            # type check
 ```
