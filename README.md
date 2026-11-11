@@ -10,7 +10,7 @@ as a local desktop app. No server, no cloud, no admin rights.
 anime, manga, books, music, movies and TV -- from nine providers, reconciled across
 sources (an anime and its own TMDB entry are one work), calibrated onto one popularity
 scale per domain, and grouped into stories (an adaptation, its sequels, a book series
-are one entry in results). Two recommendation models -- text embeddings and item-item
+are one entry in results), browsable by tag, year, score and five sort orders. Two recommendation models -- text embeddings and item-item
 collaborative filtering -- answer "more like this" in the detail view and "for you" from
 your own ratings, across domains. **972 tests**, ruff- and mypy-clean, CI on Windows for
 Python 3.12, 3.13 and 3.14.
@@ -197,6 +197,8 @@ estimates from before it has timed a step on your machine:
 | `book_goodbooks` | goodbooks-10k, GitHub CSVs | 10,000 books | seconds, no credential |
 | `book_openlibrary` | Open Library | the synopses and covers goodbooks lacks | ~1 h at 3 req/s |
 | `music_musicbrainz` | MusicBrainz + Deezer | 6,556 composers | ~2.5 h; MusicBrainz asks for 1 req/s and Loom stays under it |
+| `music_commons` | Wikidata + Wikimedia Commons | 1,811 portraits | ~80 s, 33 requests; freely licensed |
+| `music_deezer` | Deezer ids already stored | 4,501 pictures | under a second, no request; fallback where Commons has none |
 | `anime_mal_ratings` | same Kaggle archive | 19,172,125 ratings | ~1.5 min; most of the database's size |
 | `book_goodbooks_ratings` | goodbooks-10k, GitHub CSV | 5,976,479 ratings | ~1.5 min, 72 MB download, no credential |
 | `idmap_wikidata` | Wikidata SPARQL (CC0) | MAL <-> TMDB id pairs | one query; links anime to their TMDB entries |
@@ -319,7 +321,7 @@ stays **on** — we are not disabling certificate checks.
 app.py                    pywebview window  ──┐
                                               │ http://127.0.0.1:<free port>
 src/recsys/api/server.py  FastAPI  ───────────┘
-              routes.py   /api/health /api/items /api/items/{uid} /api/series/{uid}
+              routes.py   /api/health /api/items /api/items/{uid} /api/series/{uid} /api/tags
                           /api/similar/{uid} /api/stats
                           /api/ratings/{uid} /api/library /api/recommend
               ui/         plain HTML + CSS + vanilla JS, served as static files
@@ -364,6 +366,8 @@ src/recsys/ingest/
   book_goodbooks.py       goodbooks-10k CSVs → UnifiedItem
   music_musicbrainz.py    composers the catalog credits → UnifiedItem
   book_openlibrary.py     Open Library work text → UnifiedItem
+  music_commons.py        Wikimedia Commons portraits → UnifiedItem
+  music_deezer.py         Deezer pictures, from stored ids → UnifiedItem
   ratings_mal_csv.py      Kaggle MAL user lists → ratings rows (a sibling
                           contract, not an Ingester — see below)
   ratings_goodbooks.py    goodbooks-10k ratings → ratings rows (same contract)
@@ -585,16 +589,17 @@ worked around.
 | Route | Notes |
 |---|---|
 | `GET /api/health` | liveness + item count; `app.py` polls this before opening the window |
-| `GET /api/items?domain=&q=&limit=&offset=` | one card per work and per book series; `series_sizes` says how many volumes a card stands for. `q`: exact titles first, then title match fused with per-domain popularity. No `q`, no `domain`: covers first, domains interleaved |
+| `GET /api/items?domain=&q=&tag=&year_min=&year_max=&min_rating=&sort=&limit=&offset=` | one card per work and per book series; `series_sizes` says how many volumes a card stands for. `q`: exact titles first, then title match fused with per-domain popularity. No `q`: covers first, domains interleaved (one `domain`: its popularity). `domain` and `tag` repeat: several domains widen, several tags narrow. `sort` is `popularity`, `rating` (vote-weighted), `newest`, `oldest` or `title`; a sorted search does not fold series |
+| `GET /api/tags?domain=&q=&limit=` | the most-carried tags and their counts, for a picker |
 | `GET /api/items/{item_uid}` | `item_uid` is a path param — it contains `:` |
 | `GET /api/series/{item_uid}` | the volumes of the book series a work is in, in order; 404 if none |
-| `GET /api/similar/{item_uid}?method=&domain=&k=` | k nearest works; `method=content` (text embeddings) or `cf` (ratings), optionally within one `domain`. Suppresses the work's own story (adaptations, sequels, series) and keeps one work per story, unless `same_franchise=true`; reports `n_suppressed` and `n_collapsed` |
+| `GET /api/similar/{item_uid}?method=&domain=&k=` | k nearest works; `method=content` (text embeddings) or `cf` (ratings), optionally within chosen `domain`s. Suppresses the work's own story (adaptations, sequels, series) and keeps one work per story, unless `same_franchise=true`; reports `n_suppressed` and `n_collapsed` |
 | `GET /api/stats` | per-domain counts, sources, last successful ingest |
 | `PUT /api/ratings/{item_uid}` | rate a work 1-10. Idempotent — rating it again is a correction. Resolved onto the row representing the work, so rating it from two of its rows is one rating |
 | `GET /api/ratings/{item_uid}` | your score for one work, or 404 |
 | `DELETE /api/ratings/{item_uid}` | forget it. The only deletion outside `prune.py` |
-| `GET /api/library?domain=&limit=&offset=` | what you have rated, newest first |
-| `GET /api/recommend?domain=&k=` | works nearest your taste. 409 if you have rated nothing the matrix can place, 503 if the matrix is unbuilt |
+| `GET /api/library?domain=&q=&sort=&limit=&offset=` | what you have rated, newest first; `sort` is `recent`, `rating` or `title` |
+| `GET /api/recommend?domain=&k=&same_franchise=` | works nearest your taste, without more of the franchises you rated unless asked. 409 if you have rated nothing the matrix can place, 503 if the matrix is unbuilt |
 
 Interactive docs at `/docs` while the server runs.
 

@@ -12,6 +12,7 @@ similarity and nothing here needs to normalise again.
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -58,9 +59,14 @@ class SimilarityIndex:
         return None if index is None else self.matrix[index]
 
     def similar_to_vector(
-        self, vector, *, k: int = 10, domain: str | None = None, exclude: set[str] | None = None
+        self,
+        vector,
+        *,
+        k: int = 10,
+        domain: str | Collection[str] | None = None,
+        exclude: set[str] | None = None,
     ) -> list[Neighbour]:
-        """The k closest works to a vector, optionally within one domain.
+        """The k closest works to a vector, optionally within one or more domains.
 
         ``domain`` is what makes this a *cross-domain* recommender rather than a
         related-items widget: asking for the films nearest an anime is the whole
@@ -71,9 +77,10 @@ class SimilarityIndex:
         scores = self.matrix @ np.asarray(vector, dtype="float32")
 
         mask = None
-        if domain is not None:
+        wanted = {domain} if isinstance(domain, str) else set(domain or ())
+        if wanted:
             mask = np.fromiter(
-                (d == domain for d in self.domains), dtype=bool, count=len(self.domains)
+                (d in wanted for d in self.domains), dtype=bool, count=len(self.domains)
             )
         if exclude:
             # Built from positions, not by testing all 80,000 uids: callers
@@ -101,7 +108,7 @@ class SimilarityIndex:
         ]
 
     def similar_to(
-        self, item_uid: str, *, k: int = 10, domain: str | None = None
+        self, item_uid: str, *, k: int = 10, domain: str | Collection[str] | None = None
     ) -> list[Neighbour]:
         """The k works most like this one. Never returns the query itself."""
         vector = self.vector_for(item_uid)

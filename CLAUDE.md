@@ -44,6 +44,8 @@ uv run python scripts/bootstrap.py --starter  # install the starter pack instead
 uv run python scripts/bootstrap.py            # init schema + run INGESTERS
 uv run python scripts/bootstrap.py --only book_goodbooks       # 10k books, ~4 s
 uv run python scripts/bootstrap.py --only idmap_wikidata       # anime <-> TMDB ids
+uv run python scripts/bootstrap.py --only music_commons --only music_deezer  # artist pictures
+uv run python scripts/remap.py --only book_openlibrary --field image_url  # mapper fix, offline
 uv run python scripts/bootstrap.py --no-ingest                 # relink + rebuild derived
 uv run python scripts/bootstrap.py --no-ingest --prune-dry-run # what filters reject
 uv run python scripts/embed.py --check        # is the matrix current? embeds nothing
@@ -234,6 +236,64 @@ indifferent to which kind they hold. Same three-step seam either way;
   because it stores what both decided. When it is empty `db.py` falls back to
   the live joins -- a catalog that has never been linked must still list, and
   an empty shelf on a populated database is the worst way for a cache to fail.
+
+- **`works` also holds what a listing filters and sorts on, and after a schema
+  change it must be rebuilt.** Year and score ride on the row *filled from the
+  work's siblings* (8,399 of 10,000 book works have no year on their
+  representative), tags sit in `work_tags`, and the picker's vocabulary in
+  `tag_counts` -- a `json_each` walk for one tag was 265 ms. Migration 11 empties
+  `works` on purpose so reads fall back to the live joins rather than filter on
+  NULLs; run `bootstrap.py --no-ingest` after pulling it. Several tags are ANDed:
+  a second tag narrows.
+
+- **"Highest rated" sorts on `rating_key`, never on `mean_rating`.** By raw mean
+  the catalog's best work was a road-safety short with one vote of 10.
+  `works._weigh_ratings` shrinks each score toward its domain's mean by
+  `m` votes, where `m` is that domain's *median* vote count, measured at each
+  rebuild -- rejected: any constant, because half the rated TV shows have under
+  77 votes and half the rated books over 21,157. Filters still use
+  `mean_rating`, so "8 and up" means the number on the card.
+
+- **Same-franchise suppression is the `works` groups, one mechanism.** Two
+  lines of work diverged and both solved it (merged 2026-11-11). Kept:
+  sweet-ride's stored groups (components of adaptation, franchise and series
+  edges, capped at `MAX_GROUP_SIZE`) plus the Wikidata id map for anime <->
+  TMDB. Rejected: the other line's query-time walk (`franchise.py`, a
+  transitive `franchise_representatives`) and its guarded title rule for rows
+  with no id -- two mechanisms for one job. Worth porting from it later, into
+  `works.py`'s group building rather than the read path: its crossover guard,
+  never *walk through* a work with two parents (unlimited, edges took *Dragon
+  Ball Z* to *ONE PIECE* via a festival short), which is more precise than
+  leaving an oversized component ungrouped. Its `CHARACTER`/`OTHER` exclusion
+  is already `GROUP_RELATIONS`' (the former fused 4,599 works into one group).
+  Those numbers came from one-off probes over the 1,500 most popular anime.
+
+- **A URL in `image_url` is not a cover until something answers at it.** Three
+  gaps hid behind non-null fields: every 2018 MAL dump URL named a host that no
+  longer resolves, a third of goodbooks' pointed at one "no photo" file, and
+  Open Library rows ignored the cover ids in their own payload. Fix covers in
+  the mapper and apply them with `scripts/remap.py`, which re-runs a mapper over
+  stored `raw_json` and writes *only the named columns* -- goodbooks takes its
+  tags from a second file, so a whole-row remap would erase them. Open Library
+  covers go by cover id, not ISBN (ISBN lookups are limited to 100 per 5 min).
+
+- **Music portraits come from Wikimedia Commons first and Deezer second.**
+  `music_commons` joins on the MusicBrainz id through Wikidata and covers 1,811
+  of 6,556 artists with freely licensed pictures. `music_deezer` covers the
+  rest it can (4,730 of 6,556 together) from ids already in the catalog, with no
+  request -- label promotional photos, hot-linked, left out of the first pass
+  for that reason and added at the owner's request on 2026-11-10. Commons wins
+  where both exist because `fill_from_siblings` reads donors in uid order and
+  `commons` sorts before `deezer`; nothing names a source. A picture row must
+  never win the primary election (the embedding matrix holds representatives
+  only); the last tiebreak is the uid, where both sort below `musicbrainz`, and
+  `tests/test_covers.py` pins all of it. Everything without a cover gets a
+  generated tile in the UI, coloured from its title.
+
+- **`domain` is repeatable on every listing route.** `?domain=anime&domain=movie`
+  is "these and not the rest"; none, `all`, or every domain named is no filter.
+  One domain stays an equality in SQL so `idx_works_domain_sort` still serves
+  the ordering. Responses name a `domain` only when exactly one was asked for.
 
 - **`relations` is not `links`.** `links` means "these rows are the same work".
   An adaptation, a sequel or a series volume is the opposite claim -- two

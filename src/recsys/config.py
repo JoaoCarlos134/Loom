@@ -161,13 +161,21 @@ class Settings(BaseSettings):
     musicbrainz_rate_per_min: float = 45.0
     musicbrainz_max_retries: int = 8
 
-    # Wikidata's MyAnimeList <-> TMDB cross-references (CC0), one SPARQL query.
-    # They are what lets the linker see that an anime and its own TMDB TV or
-    # film entry are one work. A local JSON file (a saved query result)
-    # overrides the request.
+    # Wikidata (CC0), keyless. Two uses: the MyAnimeList <-> TMDB
+    # cross-references that let the linker see an anime and its own TMDB
+    # entry are one work (one SPARQL query; a local JSON file, a saved query
+    # result, overrides the request), and Commons artist portraits driven by
+    # the MusicBrainz ids already in the catalog.
     wikidata_sparql_url: str = "https://query.wikidata.org/sparql"
     wikidata_idmap_path: str = ""
     wikidata_max_retries: int = 4
+    music_commons_target_count: int = 0  # 0 = every artist in the catalog
+    # Asked of Commons as a thumbnail width. The originals are whatever the
+    # photographer uploaded -- routinely several megabytes -- and a card is
+    # 170 px wide; 500 covers the detail view on a high-density screen.
+    commons_image_width: int = 500
+    # ~33 queries for the whole domain, so there is nothing to gain by hurrying.
+    wikidata_rate_per_sec: float = 1.0
 
     # MyAnimeList user ratings, from the same Kaggle archive as the anime
     # table. Rows read, not rows written: ~40% carry no score and are skipped.

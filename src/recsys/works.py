@@ -21,6 +21,12 @@ This is the failure ``CLAUDE.md`` warns about in its own words -- *ordering
 happens in SQL, so a gap there cannot be patched afterwards*. The fix is not a
 cleverer query; it is putting the sort key somewhere an index can reach.
 
+**It also holds what a listing filters on.** A work's year and score ride on
+the row, and its tags sit beside it in ``work_tags`` (with ``tag_counts`` as the
+picker's vocabulary). Same argument, different symptom: tags are JSON text on
+``items``, and finding the works carrying one meant a ``json_each`` walk of the
+whole catalog -- 265 ms a query, measured, against an index probe.
+
 **It is a cache and is treated as one.** Rebuilt wholesale, never maintained
 incrementally, and stale between rebuilds exactly like ``links``. Reads fall
 back to the live joins when it is empty, so a catalog that has never been
@@ -39,6 +45,18 @@ from recsys.log import get_logger
 from recsys.relations import GROUP_RELATIONS, SERIES_RELATION, series_of
 
 log = get_logger(__name__)
+
+
+#: One scalar from another row of the same work, for a representative that
+#: lacks it. NULL for a work of one, whose `l.work_uid` is NULL.
+_SIBLING = """(SELECT s.{field} FROM links t JOIN items s ON s.item_uid = t.item_uid
+                WHERE t.work_uid = l.work_uid AND s.{field} IS NOT NULL{scope}
+                ORDER BY s.item_uid LIMIT 1)"""
+
+#: A score or a vote count comes only from a row in the work's own domain --
+#: an anime's TMDB entry does not count its MAL audience. The same rule as
+#: ``db._SAME_DOMAIN_ONLY``, so a filter agrees with the card it produces.
+_SAME_DOMAIN = " AND s.domain = i.domain"
 
 
 @dataclass
@@ -79,6 +97,54 @@ class _Components:
             if uid in members:
                 out[self.find(uid)].append(uid)
         return {root: sorted(uids) for root, uids in out.items() if len(uids) > 1}
+
+
+def _weigh_ratings(conn: sqlite3.Connection) -> None:
+    """Fill ``rating_key``: each work's score, discounted by how few gave it.
+
+    A mean is only as good as its count. Sorted by ``mean_rating`` alone the
+    catalog's best work was a road-safety short with one vote of 10. The
+    standard correction is the one film sites use for their top lists::
+
+        key = (n * R + m * C) / (n + m)
+
+    ``R`` and ``n`` are the work's mean and vote count, ``C`` the mean across
+    its domain, and ``m`` how many votes it takes to be believed over ``C``.
+
+    **``m`` is the domain's median vote count, measured at each rebuild.** No
+    constant could serve: half the rated TV shows have under 77 votes and half
+    the rated books over 21,157, so any fixed ``m`` either ignores every show
+    or believes every book. The median says "as well attested as the typical
+    work beside it", which is the same claim in every domain.
+
+    Per domain, and so are the keys: an 8.0 here and an 8.0 there were never
+    the same statement, and this does not pretend to make them one.
+    """
+    rated: dict[str, list[tuple[int | None, float]]] = {}
+    for row in conn.execute(
+        "SELECT domain, n_ratings, mean_rating FROM works WHERE mean_rating IS NOT NULL"
+    ):
+        rated.setdefault(row["domain"], []).append((row["n_ratings"], row["mean_rating"]))
+
+    for domain, rows in rated.items():
+        # The median of the counts that exist. A missing count is not a count
+        # of zero: enough of those would drag the median to nothing and let the
+        # one-vote ten back in. At least one vote, so the key is defined even
+        # where a source reports no counts at all.
+        counts = sorted(n for n, _ in rows if n is not None)
+        m = max(1, counts[len(counts) // 2]) if counts else 1
+        c = sum(r for _, r in rows) / len(rows)
+        # A score with no count is taken at the median -- as believable as the
+        # typical work beside it, which is the only neutral thing to assume.
+        # Taken at zero it would collapse onto the domain mean and every such
+        # work would tie, whatever it scored.
+        conn.execute(
+            """UPDATE works
+                  SET rating_key = (COALESCE(n_ratings, ?) * mean_rating + ? * ?)
+                                   / (COALESCE(n_ratings, ?) + ?)
+                WHERE domain = ? AND mean_rating IS NOT NULL""",
+            (m, m, c, m, m, domain),
+        )
 
 
 def rebuild_works(
@@ -123,8 +189,17 @@ def rebuild_works(
     works = {
         r["item_uid"]: r
         for r in conn.execute(
-            """SELECT i.item_uid, i.domain, i.title, i.alt_titles,
-                      COALESCE(pn.value, i.popularity) AS sort_key
+            f"""SELECT i.item_uid, i.domain, i.title, i.alt_titles,
+                      COALESCE(pn.value, i.popularity) AS sort_key,
+                      -- Year and score are what a listing filters and sorts
+                      -- on, so they are stored the way a reader sees them:
+                      -- the representative's own, or failing that a
+                      -- sibling's, as `db.fill_from_siblings` fills the card.
+                      COALESCE(i.year, {_SIBLING.format(field="year", scope="")}) AS year,
+                      COALESCE(i.mean_rating, {_SIBLING.format(field="mean_rating", scope=_SAME_DOMAIN)})
+                          AS mean_rating,
+                      COALESCE(i.n_ratings, {_SIBLING.format(field="n_ratings", scope=_SAME_DOMAIN)})
+                          AS n_ratings
                  FROM items i
                  LEFT JOIN links l ON l.item_uid = i.item_uid
                  LEFT JOIN popularity_norm pn ON pn.item_uid = i.item_uid
@@ -225,7 +300,7 @@ def rebuild_works(
             positions.get(uid), 0 if uid in unlisted else 1, n_series_of.get(uid),
             1 if uid in with_image else 0, browse_rank.get(uid),
             len(title_tokens(w["title"])), title_key(w["title"]), _alt_keys(w["alt_titles"]),
-            1 if uid in collections else 0,
+            1 if uid in collections else 0, w["year"], w["mean_rating"], w["n_ratings"],
         )
         for uid, w in works.items()
     ]
@@ -235,9 +310,29 @@ def rebuild_works(
             """INSERT INTO works (item_uid, domain, title, sort_key, group_uid,
                                   series_uid, series_name, series_pos, listed, n_series,
                                   has_image, browse_rank, title_tokens, title_key,
-                                  alt_keys, is_collection)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                  alt_keys, is_collection, year, mean_rating,
+                                  n_ratings)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             rows,
+        )
+        _weigh_ratings(conn)
+        # Tags are the representative's own and nothing more: lists are not
+        # merged across a work's rows anywhere on the read path, and a filter
+        # must not find a work by a tag its card does not show.
+        conn.execute("DELETE FROM work_tags")
+        conn.execute(
+            """INSERT OR IGNORE INTO work_tags (tag, item_uid)
+               SELECT t.value, w.item_uid
+                 FROM works w
+                 JOIN items i ON i.item_uid = w.item_uid,
+                      json_each(i.tags) t"""
+        )
+        conn.execute("DELETE FROM tag_counts")
+        conn.execute(
+            """INSERT INTO tag_counts (domain, tag, n)
+               SELECT w.domain, t.tag, COUNT(*)
+                 FROM work_tags t JOIN works w ON w.item_uid = t.item_uid
+                GROUP BY w.domain, t.tag"""
         )
 
     sizes: dict[str, int] = defaultdict(int)
