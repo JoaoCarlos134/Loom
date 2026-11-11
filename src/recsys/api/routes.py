@@ -52,7 +52,9 @@ from recsys.schemas import (
     Stats,
     TagCount,
     UnifiedItem,
+    WatchInfo,
 )
+from recsys.watch import Fetch, TmdbWatchFetch, where_to_watch
 
 router = APIRouter(prefix="/api", tags=["catalog"])
 
@@ -378,6 +380,28 @@ def read_item(item_uid: str, conn: Conn) -> UnifiedItem:
     if item is None:
         raise HTTPException(404, f"no item with uid {item_uid!r}")
     return item
+
+
+def _watch_fetcher(cfg: Settings) -> Fetch | None:
+    """The live provider lookup, or ``None`` without a TMDB credential."""
+    if not (cfg.tmdb_read_token or cfg.tmdb_api_key):
+        return None
+    return _tmdb_watch(cfg.tmdb_base_url, cfg.tmdb_read_token, cfg.tmdb_api_key)
+
+
+@lru_cache(maxsize=1)
+def _tmdb_watch(base_url: str, read_token: str, api_key: str) -> Fetch:
+    # One per credential, so its cache outlives the request.
+    return TmdbWatchFetch(get_settings())
+
+
+@router.get("/watch/{item_uid:path}", response_model=WatchInfo)
+def watch(item_uid: str, conn: Conn, cfg: Cfg) -> WatchInfo:
+    """Where this work can be watched in ``REGION``: a link, and the services
+    when a TMDB credential lets TMDB be asked. 404 for an unknown uid."""
+    if get_item(conn, item_uid) is None:
+        raise HTTPException(404, f"no item with uid {item_uid!r}")
+    return where_to_watch(conn, item_uid, region=cfg.region, fetch=_watch_fetcher(cfg))
 
 
 @router.get("/similar/{item_uid:path}", response_model=SimilarPage)

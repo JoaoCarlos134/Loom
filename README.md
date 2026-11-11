@@ -598,12 +598,13 @@ worked around.
 | `GET /api/items/{item_uid}` | `item_uid` is a path param — it contains `:` |
 | `GET /api/series/{item_uid}` | the volumes of the book series a work is in, in order; 404 if none |
 | `GET /api/similar/{item_uid}?method=&domain=&k=` | k nearest works; `method=content` (text embeddings) or `cf` (ratings), optionally within chosen `domain`s. Suppresses the work's own story (adaptations, sequels, series) and keeps one work per story, unless `same_franchise=true`; reports `n_suppressed` and `n_collapsed` |
+| `GET /api/watch/{item_uid}` | where a film, show, anime or manga can be watched in `REGION`: a link (TMDB's watch page, else AniList/MAL) always; the services and stream/rent/buy when a TMDB credential is set (JustWatch data, credited) |
 | `GET /api/stats` | per-domain counts, sources, last successful ingest |
 | `PUT /api/ratings/{item_uid}` | rate a work 1-10. Idempotent — rating it again is a correction. Resolved onto the row representing the work, so rating it from two of its rows is one rating |
 | `GET /api/ratings/{item_uid}` | your score for one work, or 404 |
 | `DELETE /api/ratings/{item_uid}` | forget it. The only deletion outside `prune.py` |
 | `GET /api/library?domain=&q=&sort=&limit=&offset=` | what you have rated, newest first; `sort` is `recent`, `rating` or `title` |
-| `GET /api/recommend?domain=&k=&same_franchise=` | works nearest your taste, without more of the franchises you rated unless asked. 409 if you have rated nothing the matrix can place, 503 if the matrix is unbuilt |
+| `GET /api/recommend?domain=&k=&same_franchise=&tag=&year_min=&year_max=&min_rating=&sort=` | works nearest your taste, without more of the franchises you rated unless asked. Browse's filters apply while the page fills; `sort` (`rating`, `newest`, `oldest`, `title`) reorders what was chosen. 409 if you have rated nothing the matrix can place, 503 if the matrix is unbuilt |
 
 Interactive docs at `/docs` while the server runs.
 

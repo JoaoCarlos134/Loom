@@ -747,6 +747,57 @@
     if (ids.length) detailRow(dl, "IDs", ids.join("  ·  "));
   }
 
+  var WATCHABLE = ["anime", "manga", "movie", "tv"];
+  var WATCH_KINDS = { stream: "Stream", free: "Free", ads: "Free with ads",
+                      rent: "Rent", buy: "Buy" };
+
+  /* Where to watch, in the region the app is set to. The services appear
+   * when TMDB can be asked (a TMDB credential in .env); the link to a page
+   * listing them is there regardless. */
+  function makeWatch(item) {
+    var box = el("section", "watch");
+    box.appendChild(el("h3", "row-title", item.domain === "manga" ? "Where to read" : "Where to watch"));
+    var note = el("p", "muted", "Looking…");
+    box.appendChild(note);
+    api("/api/watch/" + encodeURIComponent(item.item_uid)).then(function (body) {
+      note.remove();
+      if (body.providers && body.providers.length) {
+        var list = el("div", "watch-list");
+        body.providers.forEach(function (p) {
+          var chip = el("span", "watch-chip");
+          chip.title = p.name + " · " + (WATCH_KINDS[p.kind] || p.kind);
+          if (p.logo_url) {
+            var img = el("img");
+            img.alt = "";
+            img.loading = "lazy";
+            img.src = p.logo_url;
+            chip.appendChild(img);
+          }
+          chip.appendChild(el("span", null, p.name));
+          chip.appendChild(el("span", "watch-kind", WATCH_KINDS[p.kind] || p.kind));
+          list.appendChild(chip);
+        });
+        box.appendChild(list);
+      } else if (body.providers) {
+        box.appendChild(el("p", "muted", "Not offered anywhere in " + body.region + " right now."));
+      }
+      if (body.link) {
+        var a = el("a", "watch-link",
+          body.providers ? "All options in " + body.region + " ↗" : "See where it's available ↗");
+        a.href = body.link;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        box.appendChild(a);
+      } else if (!body.providers) {
+        box.appendChild(el("p", "muted", "No streaming information for this one."));
+      }
+      if (body.credit) box.appendChild(el("p", "watch-credit", "Streaming data from " + body.credit + "."));
+    }).catch(function (err) {
+      note.textContent = "Unavailable: " + String(err.message || err);
+    });
+    return box;
+  }
+
   function makeSimilar(uid) {
     var wrap = el("section", "similar");
     var head = el("div", "similar-head");
@@ -859,6 +910,7 @@
       main.appendChild(el("p", "detail-sub", sub.join("  ·  ")));
 
       main.appendChild(makeRatingControl(item.item_uid, mine));
+      if (WATCHABLE.indexOf(item.domain) !== -1) main.appendChild(makeWatch(item));
 
       if (item.description) main.appendChild(el("p", "detail-desc", item.description));
 

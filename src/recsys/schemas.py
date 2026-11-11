@@ -270,6 +270,29 @@ class SimilarItem(BaseModel):
     item: UnifiedItem
 
 
+class WatchProvider(BaseModel):
+    """One service offering a work: ``kind`` is stream, free, ads, rent or buy."""
+
+    name: str
+    kind: str
+    logo_url: str | None = None
+
+
+class WatchInfo(BaseModel):
+    """Where a work can be watched in ``region``.
+
+    ``link`` is a page listing the options (TMDB's watch page, else AniList's
+    or MAL's); ``providers`` is ``None`` when they were not looked up -- no
+    TMDB credential, or the lookup failed -- and ``[]`` when TMDB says there
+    are none in this region. ``credit`` names whose data it is.
+    """
+
+    region: str
+    link: str | None = None
+    providers: list[WatchProvider] | None = None
+    credit: str | None = None
+
+
 class SimilarPage(BaseModel):
     """/api/similar response.
 

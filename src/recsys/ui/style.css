@@ -713,3 +713,16 @@ code {
 
 .credits p { margin: 0 0 6px; }
 .credits a { color: var(--text-dim); }
+
+/* Where to watch, in the detail view. */
+.watch { margin: 14px 0 6px; }
+.watch-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 8px; }
+.watch-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px 4px 4px; border-radius: 999px;
+  background: var(--bg-elev-2); border: 1px solid var(--border); font-size: 13px;
+}
+.watch-chip img { width: 24px; height: 24px; border-radius: 6px; }
+.watch-kind { opacity: 0.6; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+.watch-link { font-size: 13px; }
+.watch-credit { font-size: 11px; opacity: 0.55; margin-top: 4px; }
