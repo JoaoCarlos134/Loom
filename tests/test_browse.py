@@ -9,6 +9,8 @@ tag picker -- is tested against the view alone, and says so.
 
 from __future__ import annotations
 
+import time
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -425,6 +427,9 @@ def test_the_tags_route(client):
 def test_the_library_can_be_searched_and_sorted(client):
     for uid, score in (("anime:jikan:1", 6), ("anime:jikan:2", 9), ("anime:jikan:3", 7)):
         assert client.put(f"/api/ratings/{uid}", json={"rating": score}).status_code == 200
+        # Windows' clock ticks every ~15 ms; three ratings inside one tick tie
+        # on rated_at and "most recent first" falls back to title order.
+        time.sleep(0.02)
 
     def lib(query=""):
         return [r["item"]["title"] for r in client.get(f"/api/library{query}").json()["items"]]
