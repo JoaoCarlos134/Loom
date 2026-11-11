@@ -831,7 +831,9 @@ def query_items(
     """Return (total_matching, page_of_items).
 
     With ``q``, the FTS index drives the query. A work whose title (or an
-    alternative title) *is* what was typed leads; everything else is ordered
+    alternative title) *is* what was typed leads, then every work whose title
+    holds the words -- a mention in a synopsis never outranks a name, however
+    popular the work doing the mentioning. Within each, works are ordered
     by two rankings fused by reciprocal rank -- how well the title matches (the
     document, when no title does), and the calibrated popularity ranked within
     each domain. Neither alone is right: bm25 puts a special above its series,
@@ -892,11 +894,15 @@ def query_items(
     for tag in tags:
         where.append(has_tag)
         params.append(tag)
-    for bound, op, value in (("year", ">=", year_min), ("year", "<=", year_max),
-                             ("rating", ">=", min_rating)):
+    for bound, op, value in (("year", ">=", year_min), ("year", "<=", year_max)):
         if value is not None:
             where.append(f"{col[bound]} {op} ?")
             params.append(value)
+    if min_rating is not None:
+        # Rounded as the card rounds it. A work scoring 7.96 is printed "8.0",
+        # and a reader who asks for 8 and up is asking about what is printed.
+        where.append(f"ROUND({col['rating']}, 1) >= ?")
+        params.append(min_rating)
 
     orders = {
         "popularity": f"{col['pop']} DESC, {col['title']} ASC",
@@ -925,8 +931,14 @@ def query_items(
             "length(trim(i.title)) - length(replace(trim(i.title), ' ', '')) + 1"
         )
         key = title_key(q)
-        exact = (
-            "(w.title_key = ? OR instr(w.alt_keys, ?) > 0)" if fast else "(0 AND ? AND ?)"
+        typed = " ".join((q or "").split())
+        # Without `works` there are no normalised keys; the typed text, folded
+        # for case, against the title and every alternative title is the
+        # nearest thing -- most people type the English name, an alt title.
+        exact, exact_params = (
+            ("(w.title_key = ? OR instr(w.alt_keys, ?) > 0)", [key, f"|{key}|"]) if fast
+            else ("(i.title = ? COLLATE NOCASE OR EXISTS (SELECT 1 FROM json_each(i.alt_titles)"
+                  " WHERE value = ? COLLATE NOCASE))", [typed, typed])
         )
         collection = "w.is_collection" if fast else "0"
         # One pass over the matches. Each series keeps its best match, then two
@@ -962,22 +974,23 @@ def query_items(
                           FROM matched WHERE series IS NOT NULL)
                      WHERE rn = 1),
                 ranked AS (
-                    SELECT rid, pop, exact,
+                    SELECT rid, pop, exact, in_title,
                            DENSE_RANK() OVER ({_TEXT_ORDER}) AS text_rank,
                            RANK() OVER (PARTITION BY dom ORDER BY pop DESC NULLS LAST)
                                AS pop_rank,
                            COUNT(*) OVER () AS total
                       FROM best),
                 page AS (
-                    SELECT rid, pop, exact, total, text_rank, pop_rank,
+                    SELECT rid, pop, exact, in_title, total, text_rank, pop_rank,
                            1.0 / ({RRF_K} + text_rank) + 1.0 / ({RRF_K} + pop_rank) AS fused
                       FROM ranked
-                     ORDER BY exact DESC, fused DESC, pop_rank, text_rank, rid
+                     ORDER BY exact DESC, in_title DESC, fused DESC, pop_rank, text_rank, rid
                      LIMIT ? OFFSET ?)
                 SELECT {_SELECT_COLS}, p.total AS total FROM page p
                   JOIN items i ON i.rowid = p.rid
-                 ORDER BY p.exact DESC, p.fused DESC, p.pop_rank, p.text_rank, p.rid""",
-            [build_fts_query(q or "", column="title"), key, f"|{key}|", match, *params,
+                 ORDER BY p.exact DESC, p.in_title DESC, p.fused DESC, p.pop_rank,
+                          p.text_rank, p.rid""",
+            [build_fts_query(q or "", column="title"), *exact_params, match, *params,
              limit, offset],
         ).fetchall()
         if rows:

@@ -290,6 +290,12 @@ indifferent to which kind they hold. Same three-step seam either way;
   `tests/test_covers.py` pins all of it. Everything without a cover gets a
   generated tile in the UI, coloured from its title.
 
+- **A score filter compares `ROUND(mean_rating, 1)`,** because the card prints
+  one decimal and "8 and up" means what is printed. (The line this came from
+  also ranked search in three name tiers, because bm25 alone opened "shingeki
+  no kyojin" on a recap special. Not ported: the fused ranking here already puts
+  an exact title first; `tests/test_search_order.py` is kept and passes on it.)
+
 - **`domain` is repeatable on every listing route.** `?domain=anime&domain=movie`
   is "these and not the rest"; none, `all`, or every domain named is no filter.
   One domain stays an equality in SQL so `idx_works_domain_sort` still serves
