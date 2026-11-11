@@ -42,7 +42,7 @@ from dataclasses import dataclass, field
 
 from recsys.db import title_key, title_tokens
 from recsys.log import get_logger
-from recsys.relations import GROUP_RELATIONS, SERIES_RELATION, series_of
+from recsys.relations import DERIVED_RELATIONS, GROUP_RELATIONS, SERIES_RELATION, series_of
 
 log = get_logger(__name__)
 
@@ -221,14 +221,45 @@ def rebuild_works(
         sorted(GROUP_RELATIONS),
     ).fetchall()
 
-    groups, series = _Components(), _Components()
-    series_rows: set[str] = set()
+    # A work derived from two works -- a festival short filed under both
+    # *Dragon Ball Z* and *ONE PIECE*, a joint one-shot -- belongs to each and
+    # joins neither to the other. Unioned through, such bridges welded those
+    # two (141 works) and *Kaguya-sama* to *[Oshi no Ko]* on the full build,
+    # and no component got near `max_group_size`, so the cap never caught it.
+    # Its edges are held back, and let in only once all its parents have
+    # turned out to be one story anyway (an OVA set between two seasons).
+    # AniList often records one end only, so parents come from both.
+    parents: dict[str, set[str]] = defaultdict(set)
     for src, dst, relation in edges:
         a, b = rep_of.get(src, src), rep_of.get(dst, dst)
-        groups.union(a, b)
+        if relation == "PARENT":
+            parents[a].add(b)
+        elif relation in DERIVED_RELATIONS:
+            parents[b].add(a)
+    held = {u for u, ps in parents.items() if len(ps - {u}) >= 2}
+
+    groups, series = _Components(), _Components()
+    series_rows: set[str] = set()
+    waiting: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    for src, dst, relation in edges:
+        a, b = rep_of.get(src, src), rep_of.get(dst, dst)
+        if a in held or b in held:
+            waiting[a if a in held else b].append((a, b))
+        else:
+            groups.union(a, b)
         if relation == SERIES_RELATION:
             series.union(a, b)
             series_rows.update((src, dst))
+    released = True
+    while released:  # one release can make another's parents one story
+        released = False
+        for uid in [u for u in waiting if len({groups.find(p) for p in parents[u] - {u}}) == 1]:
+            for a, b in waiting.pop(uid):
+                if a not in waiting and b not in waiting:
+                    groups.union(a, b)
+                else:  # its other end is still held; union once that one is let in
+                    waiting[b if a == uid else a].append((a, b))
+            released = True
 
     group_of: dict[str, str] = {}
     oversized: list[tuple[int, str]] = []

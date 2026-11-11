@@ -378,6 +378,42 @@ def test_a_component_too_big_to_be_one_story_is_left_ungrouped(conn):
 
 
 
+def group_of(conn, uid):
+    return conn.execute("SELECT group_uid FROM works WHERE item_uid = ?", (uid,)).fetchone()[0]
+
+
+def test_a_crossover_does_not_join_two_franchises(conn):
+    """Measured on the full build: a festival short filed under both put
+    *Dragon Ball Z* and *ONE PIECE* in one group, so rating one hid the other
+    and results folded them into one card. A work derived from two works is
+    reached from each and joins neither to the other -- no size cap catches
+    it, since the welded component was only 141 works."""
+    upsert_items(conn, [
+        anilist(1, "Dragon Ball Z", edges=[edge(2, "SEQUEL"), edge(9, "SIDE_STORY")]),
+        anilist(2, "Dragon Ball Super"),
+        anilist(3, "ONE PIECE", edges=[edge(4, "SEQUEL"), edge(9, "SIDE_STORY")]),
+        anilist(4, "ONE PIECE Film"),
+        anilist(9, "Jump Festa Special", edges=[edge(1, "PARENT"), edge(3, "PARENT")]),
+    ])
+    rebuild(conn)
+    dbz, op, short = "anime:anilist:1", "anime:anilist:3", "anime:anilist:9"
+    assert group_of(conn, dbz) == group_of(conn, "anime:anilist:2")
+    assert group_of(conn, op) == group_of(conn, "anime:anilist:4")
+    assert group_of(conn, dbz) != group_of(conn, op)
+    assert group_of(conn, short) not in (group_of(conn, dbz), group_of(conn, op))
+
+
+def test_two_parents_from_one_franchise_are_no_crossover(conn):
+    """An OVA set between two seasons names both as parents, and is the show's."""
+    upsert_items(conn, [
+        anilist(1, "Season 1", edges=[edge(2, "SEQUEL")]),
+        anilist(2, "Season 2"),
+        anilist(5, "The OVA", edges=[edge(1, "PARENT"), edge(2, "PARENT")]),
+    ])
+    rebuild(conn)
+    assert group_of(conn, "anime:anilist:5") == group_of(conn, "anime:anilist:1")
+
+
 def test_by_default_one_hop_reaches_adaptations_and_series_too():
     """`franchise_representatives` used to know sequels only, which is why the
     PLUTO anime survived the PLUTO manga being rated."""

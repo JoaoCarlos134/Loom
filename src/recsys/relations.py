@@ -64,6 +64,12 @@ FRANCHISE_RELATIONS: frozenset[str] = frozenset(
     {"SEQUEL", "PREQUEL", "SIDE_STORY", "PARENT", "ALTERNATIVE", "SPIN_OFF", "SUMMARY"}
 )
 
+#: Relations whose *target* is derived from its source: the edge points down
+#: from a work to something made out of it. ``PARENT`` is the same statement
+#: from the other end. A work with two such parents is a crossover candidate
+#: (see ``works.rebuild_works``).
+DERIVED_RELATIONS: frozenset[str] = frozenset({"SIDE_STORY", "SPIN_OFF", "SUMMARY"})
+
 #: Volumes of one book series, read off the Goodreads title convention.
 SERIES_RELATION = "SERIES"
 
