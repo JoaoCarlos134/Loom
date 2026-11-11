@@ -245,6 +245,10 @@ uv run python app.py --browser   # skip the webview, use the default browser
 uv run python app.py --no-ui     # serve only, for curl/httpie against the API
 ```
 
+Or double-click one of the two launchers in the repo's root, which do the same
+(and run `uv sync` the first time): `loom-window.cmd` for the native window,
+`loom-browser.cmd` for the browser. Extra arguments pass through to `app.py`.
+
 ### 6. Tests and checks
 
 ```powershell

@@ -56,6 +56,7 @@ uv run python scripts/cf.py                   # item-item CF, ~2 min; --evaluate
 uv run python scripts/measure.py              # the docs' numbers, read-only (--out FILE)
 uv run python scripts/starter.py --version v1 # build a starter pack (does not publish)
 uv run python app.py                          # native window (--browser, --no-ui)
+.\loom-window.cmd / .\loom-browser.cmd     # the same, double-clickable
 uv sync --group package; uv run pyinstaller packaging/loom.spec --noconfirm
 ```
 
