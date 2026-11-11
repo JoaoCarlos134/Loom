@@ -12,7 +12,7 @@ sources (an anime and its own TMDB entry are one work), calibrated onto one popu
 scale per domain, and grouped into stories (an adaptation, its sequels, a book series
 are one entry in results), browsable by tag, year, score and five sort orders. Two recommendation models -- text embeddings and item-item
 collaborative filtering -- answer "more like this" in the detail view and "for you" from
-your own ratings, across domains. **972 tests**, ruff- and mypy-clean, CI on Windows for
+your own ratings, across domains. **1,113 tests**, ruff- and mypy-clean, CI on Windows for
 Python 3.12, 3.13 and 3.14.
 
 The owner's full build, as last measured before this release's changes (by hand,
@@ -39,7 +39,7 @@ five media at once, ranked in a shared text-embedding space. The real UI, over a
   representative is chosen by content, never by source name, so any source stays removable.
 - **Claims are measured.** Similarity is scored against adaptation links the sources assert, with the
   pairs whose titles differ reported apart, because a shared title alone makes the headline number easy.
-- **Built to run anywhere.** 972 tests that never touch the network, ruff and mypy clean, CI on Windows
+- **Built to run anywhere.** 1,113 tests that never touch the network, ruff and mypy clean, CI on Windows
   for Python 3.12-3.14, a setup that needs no admin rights, and a PyInstaller package for people
   without Python (built on Linux; its Windows build has not run yet).
 
@@ -252,7 +252,7 @@ Or double-click one of the two launchers in the repo's root, which do the same
 ### 6. Tests and checks
 
 ```powershell
-uv run pytest          # 972 tests, none touching the network
+uv run pytest          # 1,113 tests, none touching the network
 uv run ruff check .    # lint
 uv run mypy            # type check
 ```

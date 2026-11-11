@@ -123,7 +123,7 @@ files from GitHub and synthetic catalogs; it could not reach TMDB, AniList, Kagg
 Wikidata, Open Library, MusicBrainz, Deezer or the embedding model:
 
 ```
-tests                972   none touch the network; CI on Windows, Python 3.12-3.14
+tests               1113   none touch the network; CI on Windows, Python 3.12-3.14
 goodbooks-10k     10,000   books, 5,976,479 ratings (~70 s to load, ab70d30)
   book series        852   of 2+ books, holding 3,640 books; 2,788 fold behind a card
   cards            7,212   what a reader sees of the 10,000

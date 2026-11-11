@@ -4,8 +4,10 @@ Cross-domain hybrid recommender (anime / manga / books / music / movies / TV), l
 desktop app, no admin rights. `README.md` holds the architecture and its "Why these
 choices"; `ROADMAP.md` holds where the project is and what comes next.
 
-**Status (2026-11-05):** 1.0 release candidate (`1.0.0rc1`) on
-`claude/sweet-ride-u2k95y`. The seven bugs measured on the full build are fixed
+**Status (2026-11-11):** 1.0 release candidate (`1.0.0rc1`). The two lines
+of work that diverged at `7ae5dde` are one again: the 1.0 line
+(`claude/sweet-ride-u2k95y`) is the base, the other line's browse filters,
+covers and music pictures are ported onto it (see Decisions). The seven bugs measured on the full build are fixed
 with regression tests. The starter pack was only dry-run on goodbooks-10k (no
 vectors, no Open Library text); `scripts/build.py` ran end to end only on the
 sources the build machine reached plus a fixture; the PyInstaller package was
@@ -79,6 +81,18 @@ that binary wheel is blocked too: pin an older version of that package in the
 stdlib venv only.
 
 ## Decisions (newest first)
+
+- **2026-11-11 One line again: the 1.0 line is the base.** The other line
+  (old `main`, `cd33315`..`c87d93e`) was ported onto it rather than merged
+  (14 files, two different migration 7s). Its migration 7 is 11 here, and
+  `db.init_db` steps a database at *its* 7 back to 6 first (all caches).
+  Franchise suppression is the stored `works` groups, built with the other
+  line's crossover guard: measured read-only on the full build, plain
+  components welded *Dragon Ball Z* to *ONE PIECE* and three more pairs and
+  the guard parts them, matching its query-time walk (median Jaccard 1.00
+  over the top 300 anime). Rejected: its query-time walk and title rule
+  (`franchise.py`) -- two mechanisms for one job. Search keeps the fused
+  ranking, bounded by its rule that a name match beats a synopsis mention.
 
 - **2026-11-05 Starter pack = shareable sources only** (goodbooks-10k, Open
   Library); MusicBrainz left out with TMDB, since that domain is TMDB's
@@ -255,19 +269,18 @@ indifferent to which kind they hold. Same three-step seam either way;
   77 votes and half the rated books over 21,157. Filters still use
   `mean_rating`, so "8 and up" means the number on the card.
 
-- **Same-franchise suppression is the `works` groups, one mechanism.** Two
-  lines of work diverged and both solved it (merged 2026-11-11). Kept:
-  sweet-ride's stored groups (components of adaptation, franchise and series
-  edges, capped at `MAX_GROUP_SIZE`) plus the Wikidata id map for anime <->
-  TMDB. Rejected: the other line's query-time walk (`franchise.py`, a
-  transitive `franchise_representatives`) and its guarded title rule for rows
-  with no id -- two mechanisms for one job. Worth porting from it later, into
-  `works.py`'s group building rather than the read path: its crossover guard,
-  never *walk through* a work with two parents (unlimited, edges took *Dragon
-  Ball Z* to *ONE PIECE* via a festival short), which is more precise than
-  leaving an oversized component ungrouped. Its `CHARACTER`/`OTHER` exclusion
-  is already `GROUP_RELATIONS`' (the former fused 4,599 works into one group).
-  Those numbers came from one-off probes over the 1,500 most popular anime.
+- **Same-franchise suppression is the `works` groups, one mechanism.**
+  Components of adaptation, franchise and series edges in representative
+  space, built by `works.rebuild_works` -- but never *through* a work with two
+  parents (a festival short derived from *Dragon Ball Z* and *ONE PIECE*)
+  unless its parents prove to be one story anyway. Without that guard,
+  components welded four franchise pairs on the full build and none came near
+  `MAX_GROUP_SIZE`, so the cap is a backstop, not the protection. Known miss:
+  a manga adapted together with an unrelated one (*Hanma Baki* still reaches
+  *Kengan Ashura*). A held crossover is in no group itself and suppresses only
+  its direct edges. `CHARACTER` and `OTHER` stay out of `GROUP_RELATIONS` (the
+  former fused 4,599 works into one group). Re-measure with a read-only
+  comparison before loosening any of it.
 
 - **A URL in `image_url` is not a cover until something answers at it.** Three
   gaps hid behind non-null fields: every 2018 MAL dump URL named a host that no
