@@ -198,6 +198,9 @@ def map_mal_row(raw: dict[str, Any], *, fetched_at: Any = None) -> UnifiedItem |
         source=SOURCE,
         source_id=anime_id,
         title=canonical,
+        title_english=(
+            english if (english := _clean(raw.get("title_english"))) != canonical else None
+        ),
         alt_titles=alt_titles,
         year=_parse_year(raw),
         creators=creators,

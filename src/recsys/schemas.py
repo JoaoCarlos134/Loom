@@ -97,6 +97,10 @@ class UnifiedItem(BaseModel):
     source_id: str
 
     title: str
+    # The English title, where the source names one that differs from
+    # ``title`` -- AniList and MAL title a work by its romanised original
+    # (*Kimetsu no Yaiba*); this is the *Demon Slayer* a UI may show instead.
+    title_english: str | None = None
     alt_titles: list[str] = Field(default_factory=list)
     year: int | None = None
     creators: list[Creator] = Field(default_factory=list)
@@ -205,6 +209,7 @@ class UnifiedItem(BaseModel):
             "source": self.source,
             "source_id": self.source_id,
             "title": self.title,
+            "title_english": self.title_english,
             "alt_titles": json.dumps(self.alt_titles, ensure_ascii=False),
             "year": self.year,
             "creators": json.dumps([c.model_dump() for c in self.creators], ensure_ascii=False),

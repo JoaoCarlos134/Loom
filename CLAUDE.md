@@ -48,6 +48,7 @@ uv run python scripts/bootstrap.py --only book_goodbooks       # 10k books, ~4 s
 uv run python scripts/bootstrap.py --only idmap_wikidata       # anime <-> TMDB ids
 uv run python scripts/bootstrap.py --only music_commons --only music_deezer  # artist pictures
 uv run python scripts/remap.py --only book_openlibrary --field image_url  # mapper fix, offline
+uv run python scripts/remap.py --only anime_anilist --only manga_anilist --only anime_mal_csv --field title_english  # after migration 12
 uv run python scripts/bootstrap.py --no-ingest                 # relink + rebuild derived
 uv run python scripts/bootstrap.py --no-ingest --prune-dry-run # what filters reject
 uv run python scripts/embed.py --check        # is the matrix current? embeds nothing

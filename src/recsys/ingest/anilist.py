@@ -181,6 +181,14 @@ def _titles(raw: dict[str, Any]) -> tuple[str | None, list[str]]:
     return canonical, alts
 
 
+def _english(raw: dict[str, Any], canonical: str) -> str | None:
+    """AniList's English title, when it is not already the title."""
+    english = (raw.get("title") or {}).get("english")
+    if not isinstance(english, str) or not english.strip():
+        return None
+    return None if english.strip() == canonical else english.strip()
+
+
 def _tags(raw: dict[str, Any], min_rank: int) -> list[str]:
     """Genres plus descriptive tags, minus spoilers and minus noise.
 
@@ -332,6 +340,7 @@ def map_anilist_media(
         source=SOURCE,
         source_id=str(raw["id"]),
         title=canonical,
+        title_english=_english(raw, canonical),
         alt_titles=alt_titles,
         year=_year(raw),
         creators=_creators(raw),

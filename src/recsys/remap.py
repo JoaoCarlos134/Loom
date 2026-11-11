@@ -36,7 +36,7 @@ log = get_logger(__name__)
 #: Columns a remap may rewrite. Everything a mapper decides, and nothing that
 #: says which row this is or when it was fetched.
 REMAPPABLE: tuple[str, ...] = (
-    "title", "alt_titles", "year", "creators", "tags", "description",
+    "title", "title_english", "alt_titles", "year", "creators", "tags", "description",
     "external_ids", "popularity", "mean_rating", "n_ratings", "image_url",
 )
 

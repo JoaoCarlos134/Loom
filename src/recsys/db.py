@@ -29,8 +29,8 @@ log = get_logger(__name__)
 # Columns returned to the API. raw_json is deliberately excluded: it is a
 # debugging / re-mapping aid, not payload.
 ITEM_COLUMNS: tuple[str, ...] = (
-    "item_uid", "domain", "source", "source_id", "title", "alt_titles", "year",
-    "creators", "tags", "description", "external_ids", "popularity",
+    "item_uid", "domain", "source", "source_id", "title", "title_english", "alt_titles",
+    "year", "creators", "tags", "description", "external_ids", "popularity",
     "mean_rating", "n_ratings", "image_url", "fetched_at",
 )
 _SELECT_COLS = ", ".join(f"i.{c}" for c in ITEM_COLUMNS)
@@ -319,6 +319,13 @@ CREATE TABLE tag_counts (
 DELETE FROM works;
 """
 
+# The English title beside the original one (see `UnifiedItem.title_english`).
+# Stored rows get it from their own payloads with
+# `scripts/remap.py --field title_english`; nothing is refetched.
+MIGRATION_12 = """
+ALTER TABLE items ADD COLUMN title_english TEXT;
+"""
+
 # Append new migrations here; never modify an existing entry.
 MIGRATIONS: list[tuple[int, str]] = [
     (1, MIGRATION_1),
@@ -332,6 +339,7 @@ MIGRATIONS: list[tuple[int, str]] = [
     (9, MIGRATION_9),
     (10, MIGRATION_10),
     (11, MIGRATION_11),
+    (12, MIGRATION_12),
 ]
 
 SCHEMA_VERSION = MIGRATIONS[-1][0]
@@ -415,16 +423,18 @@ def init_db(db_path: Path | str | None = None) -> int:
 
 _UPSERT_SQL = """
 INSERT INTO items (
-    item_uid, domain, source, source_id, title, alt_titles, year, creators,
+    item_uid, domain, source, source_id, title, title_english, alt_titles, year, creators,
     tags, description, external_ids, popularity, mean_rating, n_ratings,
     image_url, fetched_at, raw_json
 ) VALUES (
-    :item_uid, :domain, :source, :source_id, :title, :alt_titles, :year, :creators,
+    :item_uid, :domain, :source, :source_id, :title, :title_english, :alt_titles, :year,
+    :creators,
     :tags, :description, :external_ids, :popularity, :mean_rating, :n_ratings,
     :image_url, :fetched_at, :raw_json
 )
 ON CONFLICT(item_uid) DO UPDATE SET
     title        = excluded.title,
+    title_english = excluded.title_english,
     alt_titles   = excluded.alt_titles,
     year         = excluded.year,
     creators     = excluded.creators,
@@ -1235,7 +1245,7 @@ def top_tags(
 #: are deliberately absent: filling a null is unambiguous, but merging two
 #: sources' tags is a modelling decision, and Phase 3 reads the real union
 #: through `link.work_members()`.
-_FILLABLE = ("year", "description", "popularity", "mean_rating", "n_ratings", "image_url")
+_FILLABLE = ("title_english", "year", "description", "popularity", "mean_rating", "n_ratings", "image_url")
 
 #: Of those, the ones that count an audience. A work can span domains -- an
 #: anime and its TMDB TV entry -- and a TMDB vote count or vote average is not

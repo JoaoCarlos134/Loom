@@ -54,3 +54,12 @@ def test_the_tmdb_notice_is_shown_in_the_app():
     notice = ("This product uses TMDB and the TMDB APIs but is not endorsed, certified, "
               "or otherwise approved by TMDB.")
     assert notice in " ".join(html.split())
+
+
+def test_titles_can_be_shown_in_english(app_js):
+    """One switch, remembered: Kimetsu no Yaiba becomes Demon Slayer."""
+    html = (UI / "index.html").read_text(encoding="utf-8")
+    assert 'id="title-lang"' in html
+    assert "item.title_english" in app_js and "englishTitles" in app_js
+    # The domain toggles must not pick the setting up as a domain.
+    assert '"#domains .chip[data-domain]"' in app_js

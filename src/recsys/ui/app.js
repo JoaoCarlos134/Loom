@@ -38,7 +38,7 @@
 
   var els = {
     search: document.getElementById("search"),
-    domains: Array.prototype.slice.call(document.querySelectorAll("#domains .chip")),
+    domains: Array.prototype.slice.call(document.querySelectorAll("#domains .chip[data-domain]")),
     toolbar: document.getElementById("toolbar"),
     sort: document.getElementById("sort"),
     tagChips: document.getElementById("tag-chips"),
@@ -72,6 +72,7 @@
     sort: { browse: "", recommend: "", library: "" },
     tags: [], yearMin: null, yearMax: null, minRating: "",
     pageSize: prefs.pageSize, sameFranchise: prefs.sameFranchise,
+    englishTitles: prefs.englishTitles,
     offset: 0, total: 0, loading: false, done: false, seq: 0
   };
 
@@ -111,11 +112,12 @@
    * remembered -- reopening the app onto last week's "romance, 1990-1995" and
    * wondering where the catalog went is worse than choosing them again. */
   function loadPrefs() {
-    var out = { pageSize: 40, sameFranchise: false };
+    var out = { pageSize: 40, sameFranchise: false, englishTitles: false };
     try {
       var saved = JSON.parse(localStorage.getItem(PREFS_KEY) || "{}");
       if (PAGE_SIZES.indexOf(saved.pageSize) !== -1) out.pageSize = saved.pageSize;
       out.sameFranchise = saved.sameFranchise === true;
+      out.englishTitles = saved.englishTitles === true;
     } catch (e) { /* storage unavailable or unreadable: defaults are fine */ }
     return out;
   }
@@ -123,7 +125,8 @@
   function savePrefs() {
     try {
       localStorage.setItem(PREFS_KEY, JSON.stringify({
-        pageSize: state.pageSize, sameFranchise: state.sameFranchise
+        pageSize: state.pageSize, sameFranchise: state.sameFranchise,
+        englishTitles: state.englishTitles
       }));
     } catch (e) { /* a preference that does not stick is not an error */ }
   }
@@ -155,10 +158,12 @@
    * colour every time -- a grid of identical grey tiles reads as broken. */
   function makePlaceholder(item) {
     var hash = 0;
+    // Coloured from the original title, so a tile keeps its colour when the
+    // title language is switched.
     for (var i = 0; i < item.title.length; i++) {
       hash = (hash * 31 + item.title.charCodeAt(i)) % 360;
     }
-    var words = item.title.split(/\s+/).filter(Boolean);
+    var words = shownTitle(item).split(/\s+/).filter(Boolean);
     var initials = words.slice(0, 2).map(function (w) {
       return Array.from(w)[0] || "";
     }).join("").toUpperCase();
@@ -183,12 +188,19 @@
     return img;
   }
 
+  /* The title to show. AniList and MAL name a work by its romanised original
+   * (Kimetsu no Yaiba, Na Honjaman Level Up); with English titles on, the
+   * English one (Demon Slayer, Solo Leveling) wherever the source gave one. */
+  function shownTitle(item) {
+    return state.englishTitles && item.title_english ? item.title_english : item.title;
+  }
+
   function makeCard(item, nSeries, onOpen) {
     var card = el("button", "card");
     card.type = "button";
     card.dataset.uid = item.item_uid;
-    card.title = item.title;
-    card.setAttribute("aria-label", item.title);
+    card.title = shownTitle(item);
+    card.setAttribute("aria-label", shownTitle(item));
 
     var thumb = el("div", "thumb");
     thumb.appendChild(makeCover(item));
@@ -199,7 +211,7 @@
     paintMine(card, myRatings[item.item_uid]);
 
     var body = el("div", "card-body");
-    body.appendChild(el("div", "card-title", item.title));
+    body.appendChild(el("div", "card-title", shownTitle(item)));
 
     var meta = el("div", "card-meta");
     var bits = [];
@@ -874,7 +886,10 @@
     return wrap;
   }
 
+  var currentDetail = null;  // the uid the detail view shows, to redraw it
+
   function openDetail(uid) {
+    currentDetail = uid;
     // 404 from /api/ratings means "not rated", which is an answer rather than
     // an error -- so it resolves to null instead of rejecting the dialog.
     var rating = api("/api/ratings/" + encodeURIComponent(uid))
@@ -898,7 +913,12 @@
         back.addEventListener("click", function () { openDetail(detailTrail.pop()); });
         main.appendChild(back);
       }
-      main.appendChild(el("h2", null, item.title));
+      main.appendChild(el("h2", null, shownTitle(item)));
+      // The other name, so switching languages never hides one.
+      if (item.title_english) {
+        main.appendChild(el("p", "detail-alt-title", state.englishTitles
+          ? "Original title: " + item.title : "English title: " + item.title_english));
+      }
 
       var sub = [];
       if (item.year) sub.push(item.year);
@@ -954,11 +974,11 @@
   function makeMini(item) {
     var b = el("button", "mini");
     b.type = "button";
-    b.setAttribute("aria-label", item.title);
+    b.setAttribute("aria-label", shownTitle(item));
     var thumb = el("div", "mini-thumb");
     thumb.appendChild(makeCover(item));
     b.appendChild(thumb);
-    b.appendChild(el("div", "mini-title", item.title));
+    b.appendChild(el("div", "mini-title", shownTitle(item)));
     b.appendChild(el("div", "mini-meta", item.year ? item.domain + " · " + item.year : item.domain));
     b.addEventListener("click", function () { openDetail(item.item_uid); });
     return b;
@@ -995,7 +1015,7 @@
       var list = el("ol", "series-list");
       body.items.forEach(function (vol) {
         var li = el("li");
-        var b = el("button", "linkish", vol.title);
+        var b = el("button", "linkish", shownTitle(vol));
         b.type = "button";
         if (vol.item_uid === uid) b.classList.add("is-current");
         b.addEventListener("click", function () { openDetail(vol.item_uid); });
@@ -1090,6 +1110,20 @@
   els.minRating.addEventListener("change", function () {
     state.minRating = els.minRating.value;
     reload();
+  });
+
+  var titleLang = document.getElementById("title-lang");
+  function paintTitleLang() {
+    titleLang.setAttribute("aria-pressed", String(state.englishTitles));
+    titleLang.classList.toggle("is-on", state.englishTitles);
+  }
+  paintTitleLang();
+  titleLang.addEventListener("click", function () {
+    state.englishTitles = !state.englishTitles;
+    paintTitleLang();
+    savePrefs();
+    reload();
+    if (els.detail.open && currentDetail) openDetail(currentDetail);
   });
 
   els.sameFranchise.checked = state.sameFranchise;
